@@ -52,7 +52,11 @@ async def test_clean_run_resolves_without_attempts():
     assert final.status == RunStatus.RESOLVED
     assert final.current_step == FSMStep.VERIFY
     assert final.attempt == 0
-    assert [e["event"] for e in events] == ["SENSE_COMPLETE"]
+    assert [e["event"] for e in events] == [
+        "SENSE_STARTED",
+        "SENSE_COMPLETE",
+        "RUN_RESOLVED",
+    ]
     assert events[0]["state"]["pr_url"].endswith("/pull/42")
 
 
@@ -70,9 +74,11 @@ async def test_healing_loop_resolves_on_first_attempt_with_stub_adapters():
     assert final.current_patch and final.best_patch == final.current_patch
     assert final.best_score == pytest.approx(1.0)
     assert [e["event"] for e in events] == [
+        "SENSE_STARTED",
         "SENSE_COMPLETE",
         "TRIAGE_COMPLETE",
         "ATTEMPT_1_FEEDBACK",
+        "RUN_RESOLVED",
     ]
 
 
@@ -97,11 +103,13 @@ async def test_three_strike_loop_halts_and_preserves_best_patch(monkeypatch):
     assert final.attempt == 3 and len(final.attempts) == 3
     assert final.best_patch == final.current_patch
     assert [e["event"] for e in events] == [
+        "SENSE_STARTED",
         "SENSE_COMPLETE",
         "TRIAGE_COMPLETE",
         "ATTEMPT_1_FEEDBACK",
         "ATTEMPT_2_FEEDBACK",
         "ATTEMPT_3_FEEDBACK",
+        "RUN_HALTED",
     ]
 
 
