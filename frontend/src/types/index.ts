@@ -1,0 +1,54 @@
+export type FSMStep = 
+  | "1.SENSE" 
+  | "2.TRIAGE" 
+  | "3.DIAGNOSE" 
+  | "4.PATCH" 
+  | "5.VERIFY";
+
+export type RunStatus = "PENDING" | "RUNNING" | "RESOLVED" | "FAILED";
+
+export type DefectType = "OCCLUSION" | "COLLISION" | "VIEWPORT_OVERFLOW";
+
+export interface DOMBoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Anomaly {
+  id: string;
+  element_id: string;
+  defect_type: DefectType;
+  bounding_box?: DOMBoundingBox;
+  visibility_ratio?: number;
+  iou_score?: number;
+  sam_mask_path?: string;
+  status: string;
+}
+
+export interface SelfHealingAttempt {
+  attempt_number: number;
+  patch_diff?: string;
+  verified_vr?: number;
+  verified_iou?: number;
+  passed: boolean;
+  error_message?: string;
+  timestamp: string;
+}
+
+export interface PRRun {
+  id: string;
+  pr_number: number;
+  repo_name: string;
+  branch: string;
+  commit_sha: string;
+  status: RunStatus;
+  current_step: FSMStep;
+  strikes: number;
+  anomalies_count?: number;
+  anomalies?: Anomaly[];
+  attempts?: SelfHealingAttempt[];
+  created_at?: string;
+  updated_at?: string;
+}
