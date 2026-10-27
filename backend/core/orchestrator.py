@@ -672,18 +672,23 @@ async def _drive_fsm(
         orchestrator.on_state_change = None
         orchestrator.ws_broadcast = None
     try:
+        # Transition: SENSE_STARTED
+        if use_events:
+            await _broadcast(event_broadcast, "SENSE_STARTED", state)
+
         # Node 1: SENSE
         state = await orchestrator.step_1_sense(state)
+        if use_events:
+            await _broadcast(event_broadcast, "SENSE_COMPLETE", state)
+
         if not state.anomalies:
             state.is_resolved = True
             state.transition_to(FSMStep.VERIFY, RunStatus.RESOLVED)
             if use_events:
-                await _broadcast(event_broadcast, "SENSE_COMPLETE", state)
+                await _broadcast(event_broadcast, "RUN_RESOLVED", state)
             else:
                 await orchestrator.emit_update(state)
             return state
-        if use_events:
-            await _broadcast(event_broadcast, "SENSE_COMPLETE", state)
 
         # Node 2: TRIAGE (once per run, FR-04)
         state = await orchestrator.step_2_triage(state)
@@ -728,6 +733,8 @@ async def _drive_fsm(
             if state.is_resolved or (latest is not None and latest.passed):
                 state.is_resolved = True
                 state.transition_to(FSMStep.VERIFY, RunStatus.RESOLVED)
+                if use_events:
+                    await _broadcast(event_broadcast, "RUN_RESOLVED", state)
                 break
     finally:
         orchestrator.on_state_change = saved_callback
@@ -736,7 +743,9 @@ async def _drive_fsm(
     if not state.is_resolved:
         # BR-6: halt after Strike 3; best_patch is kept for PR review.
         state.transition_to(FSMStep.VERIFY, RunStatus.FAILED)
-        if not use_events:
+        if use_events:
+            await _broadcast(event_broadcast, "RUN_HALTED", state)
+        else:
             await orchestrator.emit_update(state)
     else:
         state.transition_to(FSMStep.VERIFY, RunStatus.RESOLVED)
