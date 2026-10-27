@@ -45,6 +45,10 @@ app.add_middleware(
 app.include_router(webhooks_router)
 app.include_router(ws_router)
 
+# Mount root WebSocket endpoint for Jira requirement /ws/mission-control
+from backend.api.routes_ws import mission_control_ws_endpoint
+app.add_api_websocket_route("/ws/mission-control", mission_control_ws_endpoint)
+
 
 @app.get("/health", tags=["System"])
 async def health_check():
