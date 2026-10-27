@@ -8,7 +8,7 @@ from .vision_math import (
     calculate_iou,
     detect_bleed_overflow,
 )
-from .orchestrator import VisorOrchestrator
+from .orchestrator import VisorOrchestrator, run_visor_agent
 
 __all__ = [
     "AgentState",
@@ -21,4 +21,5 @@ __all__ = [
     "calculate_iou",
     "detect_bleed_overflow",
     "VisorOrchestrator",
+    "run_visor_agent",
 ]
