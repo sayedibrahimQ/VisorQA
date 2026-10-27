@@ -1,8 +1,0 @@
-modal>=0.64.0
-playwright>=1.47.0
-numpy>=1.26.0
-Pillow>=10.4.0
-requests>=2.32.0
-pydantic>=2.9.0
-openai>=1.50.0
-PyGithub>=2.4.0

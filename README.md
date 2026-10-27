@@ -1,4 +1,4 @@
-# VisorQA 🛡️👁️
+# VisorQA 
 **Autonomous Visual QA & Self-Healing Frontend Agent**  
 *Built for the Meta Global AI Developer Hackathon*
 
