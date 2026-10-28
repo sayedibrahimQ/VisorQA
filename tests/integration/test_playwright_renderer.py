@@ -24,7 +24,7 @@ from backend.browser.renderer import (
 )
 from backend.core.state import DOMBoundingBox
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 RICH = (FIXTURES / "rich_page.html").read_text(encoding="utf-8")
 SPARSE = "<html><body><button>One</button><button>Two</button>" \
          "<a href='/x'>Link</a></body></html>"

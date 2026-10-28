@@ -16,7 +16,7 @@ from backend.browser.renderer import (
     extract_hierarchy,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 def _big_page() -> str:
