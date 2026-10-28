@@ -33,6 +33,8 @@ from typing import Any, Dict, List, Optional, Sequence
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from backend.browser.schemas import DefectRegion, OverlayArtifact
+
 CYAN = (0, 240, 255)        # #00F0FF
 CRIMSON = (244, 63, 94)     # #F43F5E
 CRIMSON_ALPHA = 0.35
@@ -43,8 +45,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 class OverlayError(ValueError):
     """Raised for mismatched/invalid overlay inputs."""
 
-
-from backend.browser.schemas import DefectRegion, OverlayArtifact
 
 __all__ = [
     "CYAN", "CRIMSON", "CRIMSON_ALPHA", "DefectRegion", "OverlayArtifact",

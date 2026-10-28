@@ -21,7 +21,6 @@ import argparse
 import asyncio
 import json
 import logging
-import re
 import struct
 import sys
 from pathlib import Path

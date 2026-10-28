@@ -29,7 +29,6 @@ from backend.config import settings
 from backend.core.state import AgentState, FSMStep, RunStatus
 from backend.db.repository import (
     AsyncSessionLocal,
-    PRRun,
     RepositoryRecord,
     RunRepository,
 )

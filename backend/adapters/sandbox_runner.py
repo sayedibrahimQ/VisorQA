@@ -5,7 +5,6 @@ Playwright + Modal HMR / Local Container Sandbox Strategy
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
-import numpy as np
 
 
 class SandboxRunnerStrategy(ABC):

@@ -52,6 +52,7 @@ class GitHubClient:
             f"- **Strikes:** {summary.get('strikes', 1)}/3\n"
             f"- **Live Telemetry & Mask Inspector:** [{inspector_url}]({inspector_url})\n"
         )
+        _ = comment_body
         return True
 
     async def commit_patch(

@@ -45,7 +45,7 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 from uuid import uuid4
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from backend.config import settings
 
