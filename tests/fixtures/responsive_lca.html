@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Responsive LCA fixture</title>
+<style>body{margin:0;font-family:sans-serif}.slot{padding:8px}</style>
+</head><body>
+<div id="app">
+  <section id="hero-desktop"><div id="desktop-slot" class="slot"></div></section>
+  <div id="mobile-bar"><div id="mobile-slot" class="slot"></div></div>
+  <button data-visor-el-id="el-cta" id="cta">Responsive CTA</button>
+  <button data-visor-el-id="el-other">Other</button>
+</div>
+<script>
+  // Relocate CTA based on viewport before Playwright injection runs.
+  (function () {
+    var cta = document.getElementById('cta');
+    var target = window.matchMedia('(max-width: 500px)').matches
+      ? document.getElementById('mobile-slot')
+      : document.getElementById('desktop-slot');
+    target.appendChild(cta);
+  })();
+</script>
+</body></html>

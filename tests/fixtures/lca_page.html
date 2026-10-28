@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>LCA fixture</title>
+<style>
+  * { box-sizing: border-box; } body { margin:0; font-family:sans-serif; }
+  .toolbar { display:flex; flex-direction:row; flex-wrap:wrap; overflow:hidden;
+             position:relative; z-index:5; width:600px; max-width:90%; }
+  .card-grid { display:grid; overflow:visible; position:static; }
+  .card { display:block; overflow:auto; position:relative; }
+  .scroll-box { display:block; overflow-x:scroll; overflow-y:auto;
+                position:absolute; top:300px; left:0; width:200px; height:60px; }
+  .fixed-bar { position:fixed; top:0; right:0; z-index:99; display:flex;
+               flex-direction:column; }
+  .plain-block { display:block; }
+</style></head><body>
+<div id="app" data-component="AppRoot">
+  <section id="toolbar" class="toolbar main-toolbar" data-component="Toolbar" data-testid="toolbar">
+    <button data-visor-el-id="el-save" data-testid="save-btn" aria-label="Save document">Save</button>
+    <button data-visor-el-id="el-cancel">Cancel</button>
+    <span class="sep">|</span>
+    <button data-visor-el-id="el-help">Help</button>
+  </section>
+
+  <div id="grid" class="card-grid">
+    <div class="card" id="card-a" data-component="ProductCard">
+      <button data-visor-el-id="el-card-a-btn">Card A action</button>
+    </div>
+    <div class="card" id="card-b">
+      <button data-visor-el-id="el-card-b-btn">Card B action</button>
+    </div>
+  </div>
+
+  <div id="outer-wrap" class="plain-block">
+    <div id="inner-wrap" class="plain-block">
+      <div role="button" id="nested-wrap" data-visor-el-id="el-nested-outer" aria-label="Outer action">
+        <button data-visor-el-id="el-nested-inner">Inner action</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="scrollbox" class="scroll-box">
+    <button data-visor-el-id="el-scroll-btn">Scroll action</button>
+  </div>
+
+  <div id="fixedbar" class="fixed-bar">
+    <button data-visor-el-id="el-fixed-btn">Fixed action</button>
+  </div>
+
+  <form>
+    <input type="text" data-visor-el-id="el-name" placeholder="Your name" name="fullname">
+    <input type="password" data-visor-el-id="el-secret" placeholder="Password" value="should-never-appear">
+  </form>
+
+</div>
+<button id="fiber-btn" data-visor-el-id="el-fiber">Fiber action</button>
+<button id="plain-btn" data-visor-el-id="el-plain">Plain action</button>
+<script>
+  // Simulated React Fiber heuristic marker (not a real React runtime).
+  (function () {
+    function CheckoutButton() {}
+    var fiber = { type: 'div', return: { type: CheckoutButton, return: null } };
+    Object.defineProperty(document.getElementById('fiber-btn'),
+      '__reactFiber$test123', { value: fiber, enumerable: true });
+  })();
+</script>
+</body></html>
