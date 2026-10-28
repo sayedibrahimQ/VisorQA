@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VisorQA fixture</title>
+<style>
+  * { box-sizing: border-box; } body { margin:0; font-family:sans-serif; }
+  header.site { position:sticky; top:0; height:56px; background:#111; color:#fff; }
+  nav.main { height:40px; background:#333; }
+  nav.main a { color:#fff; margin-right:12px; }
+  .banner { position:fixed; bottom:0; left:0; right:0; height:36px; background:gold; }
+  .dialog { position:fixed; top:70px; right:10px; width:200px; height:90px; background:#fff; border:1px solid #000; }
+  .menu { width:180px; border:1px solid #999; }
+  .card { display:inline-block; width:150px; height:80px; margin:6px; border:1px solid #888; vertical-align:top; }
+  button, a.btn { margin:4px; }
+  .hidden-el { display:none; }
+  .zero-el { width:0; height:0; overflow:hidden; padding:0; border:0; }
+  .offscreen-el { position:absolute; top:3000px; left:0; }
+  .partial-el { position:fixed; top:120px; right:-30px; width:80px; height:30px; }
+  .mobile-only { display:none; }
+  @media (max-width: 500px) {
+    .desktop-only { display:none !important; }
+    .mobile-only { display:inline-block; }
+    .card { width:110px; }
+  }
+</style></head><body>
+<header class="site">Site Header</header>
+<nav class="main" aria-label="Main">
+  <a href="/a">Nav A</a><a href="/b">Nav B</a>
+</nav>
+<div class="banner" role="banner">Promo banner</div>
+<div class="dialog" role="dialog" aria-label="Cookie dialog">Cookies <button>Accept cookies</button></div>
+<div class="menu" role="menu"><button>Menu item one</button></div>
+
+<main>
+  <button data-visor-el-id="visor-el-01" data-custom="keep-me">PreExisting</button>
+  <button data-visor-el-id="visor-el-01">DuplicateId</button>
+  <button>Buy now</button>
+  <button>Sign up</button>
+  <button>Add to cart</button>
+  <button>Checkout</button>
+  <button class="mobile-only">Mobile menu</button>
+  <button class="hidden-el">HiddenButton</button>
+  <button class="zero-el">ZeroButton</button>
+  <button class="offscreen-el">OffscreenButton</button>
+  <button class="partial-el">PartialBtn</button>
+
+  <a href="/products">Products</a>
+  <a href="/about">About</a>
+  <a href="/contact">Contact</a>
+  <a href="/help" class="desktop-only">DesktopHelp</a>
+  <a href="/faq" class="desktop-only">DesktopFaq</a>
+
+  <form>
+    <input type="text" placeholder="Search" name="q">
+    <input type="email" placeholder="Email" name="email">
+    <input type="checkbox" name="agree">
+    <select name="size"><option>S</option></select>
+    <textarea name="notes" placeholder="Notes"></textarea>
+    <input type="search" placeholder="Find" name="find">
+  </form>
+
+  <section>
+    <div class="card">Card One</div>
+    <div class="card">Card Two</div>
+    <div class="card">Card Three</div>
+    <div class="card desktop-only">Card Desktop</div>
+    <div class="card">Card Four</div>
+    <div class="card">Card Five</div>
+  </section>
+</main>
+</body></html>
