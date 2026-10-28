@@ -5,6 +5,7 @@ VisorQA Infrastructure & Adapters Layer
 from .sandbox_runner import SandboxRunnerStrategy, ModalSandboxRunner, LocalPlaywrightRunner
 from .muse_clients import SAM31Client, MuseSparkClient, MuseWonderClient, MuseCodeClient
 from .spark_client import MuseSparkTriageClient
+from .wonder_client import MuseWonderDiagnosisClient
 from .sam31 import (
     ElementPrompt,
     MetaSAMTransport,
@@ -20,6 +21,7 @@ __all__ = [
     "SAM31Client",
     "PointGuidedSAM31Client",
     "MuseSparkTriageClient",
+    "MuseWonderDiagnosisClient",
     "MetaSAMTransport",
     "ElementPrompt",
     "SegmentationBatchResult",
