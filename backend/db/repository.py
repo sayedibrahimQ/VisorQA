@@ -238,8 +238,10 @@ class RunRepository:
         branch: str = "main",
         commit_sha: str = "HEAD",
         github_delivery_id: Optional[str] = None,
+        repo_id: Optional[str] = None,
     ) -> PRRun:
         run = PRRun(
+            repo_id=repo_id,
             pr_number=pr_number,
             repo_full_name=repo_name,
             branch=branch,
@@ -261,6 +263,18 @@ class RunRepository:
         stmt = (
             select(PRRun)
             .where(PRRun.id == run_id)
+            .options(selectinload(PRRun.anomalies), selectinload(PRRun.attempts))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def get_run_by_delivery_id(self, delivery_id: str) -> Optional[PRRun]:
+        """Looks up a PRRun by its unique github_delivery_id for idempotency checks."""
+        if not self.session:
+            return None
+        stmt = (
+            select(PRRun)
+            .where(PRRun.github_delivery_id == delivery_id)
             .options(selectinload(PRRun.anomalies), selectinload(PRRun.attempts))
         )
         result = await self.session.execute(stmt)
