@@ -187,6 +187,28 @@ class TriageResponse(BaseModel):
     rejected_targets: List[RejectedTarget] = Field(default_factory=list)
 
 
+class RepairSpec(BaseModel):
+    """Muse Wonder diagnosis contract (Node 3 DIAGNOSE).
+
+    A declarative repair specification, never a code patch: Node 4
+    (PATCH) turns this into a diff. Consumed by ``diagnose_muse_wonder``
+    (which validates target authorization and merges only these fields
+    into ``AgentState.repair_spec``, preserving Node 2 triage metadata)
+    and by PATCH via ``repair_spec`` (``target_file`` / ``css_strategy``).
+    Strict-clean for Meta structured output: no extra properties, no
+    free-form dicts, no recursion.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    root_cause: str = Field(min_length=1)
+    affected_selectors: List[str] = Field(min_length=1)
+    target_file: str = Field(min_length=1)
+    css_strategy: str = Field(min_length=1)
+    desktop_preservation_constraints: List[str] = Field(min_length=1)
+    forbidden_hacks: List[str] = Field(min_length=1)
+
+
 class SelfHealingAttempt(BaseModel):
     """Single cycle within the 3-Strike Self-Healing Loop"""
 
