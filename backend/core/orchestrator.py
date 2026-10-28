@@ -116,6 +116,15 @@ def _default_sam() -> Any:
 
 
 def _default_spark() -> Any:
+    # Real Muse Spark client only when the Meta Model API is fully
+    # configured (key present; base URL and model carry Meta defaults);
+    # otherwise the deterministic legacy stub keeps offline runs and
+    # tests working (no fabricated network results).
+    if settings.META_API_KEY and settings.META_BASE_URL and \
+            getattr(settings, "MUSE_SPARK_MODEL", ""):
+        from backend.adapters.spark_client import MuseSparkTriageClient
+
+        return MuseSparkTriageClient()
     from backend.adapters.muse_clients import MuseSparkClient
 
     return MuseSparkClient()
@@ -265,44 +274,106 @@ async def sense_with_playwright_and_sam(
 async def triage_files_muse_spark(
     state: AgentState, spark_client: Any = None
 ) -> AgentState:
-    """Map anomalies to 1-2 parent layout files; never target protected UI."""
+    """Map anomalies to 1-2 parent layout files; never target protected UI.
+
+    Muse Spark proposes localizations from LCA hierarchy + computed
+    CSS + repository tree; deterministic BR-2 enforcement in
+    ``backend.core.triage`` makes the final decision. Model or endpoint
+    failure falls back to pre-existing non-protected candidates -- it
+    never fabricates a successful triage.
+    """
+    from backend.core.state import TriageCandidate, TriageResponse
+    from backend.core.triage import (
+        build_triage_context,
+        detect_intentional_overlaps,
+        enforce_triage_response,
+    )
+
     state.transition_to(FSMStep.TRIAGE)
     if not state.anomalies:
         state.target_files = [f for f in state.target_files if not _is_protected(f)]
         return state
 
     spark = spark_client or _default_spark()
-    candidates: List[str] = list(state.target_files)
-    try:
-        result: Dict[str, Any] = await spark.triage_anomalies(
-            [a.model_dump(mode="json") for a in state.anomalies],
-            state.repair_spec.get("lca_dom", {}) if isinstance(state.repair_spec, dict) else {},
-        ) or {}
-    except Exception:
-        result = {}
-    if isinstance(result, dict):
-        raw = result.get("target_files") or result.get("candidate_files") or []
-        if isinstance(raw, str):
-            raw = [raw]
-        candidates.extend(str(f) for f in raw)
-        single = result.get("candidate_source_file") or result.get("candidate_file")
-        if single:
-            candidates.append(str(single))
-        # Preserve LCA / summary context for DIAGNOSE without clobbering spec.
-        merged = dict(state.repair_spec)
-        for key in ("lca_element_id", "lca_dom", "triage_summary"):
-            if result.get(key) is not None:
-                merged[key] = result[key]
-        state.repair_spec = merged
+    context = build_triage_context(state)
+    hierarchy = context.get("hierarchy") or []
+    intentional = detect_intentional_overlaps(
+        state.anomalies, hierarchy,
+        state.repair_spec if isinstance(state.repair_spec, dict) else {})
+    all_ids = {a.element_id for a in state.anomalies if a.element_id}
+    actionable_ids = all_ids - set(intentional)
 
-    # De-duplicate, preserve order, enforce BR-2.
-    seen: set[str] = set()
-    target_files: List[str] = []
-    for path in candidates:
-        if path and path not in seen and not _is_protected(path):
-            seen.add(path)
-            target_files.append(path)
-    state.target_files = target_files
+    raw_result: Any = None
+    triage_error: Optional[str] = None
+    is_legacy = not hasattr(spark, "triage")
+    try:
+        if not is_legacy:
+            raw_result = await spark.triage(context)
+        else:  # legacy stub adapter contract
+            raw_result = await spark.triage_anomalies(
+                [a.model_dump(mode="json") for a in state.anomalies],
+                context.get("lca_dom") or {},
+            )
+    except Exception as exc:
+        triage_error = f"{type(exc).__name__}: {exc}"[:200]
+
+    if raw_result is None:
+        response = TriageResponse(status="error")
+    elif isinstance(raw_result, TriageResponse):
+        response = raw_result
+    elif isinstance(raw_result, dict):
+        try:
+            response = TriageResponse.model_validate(raw_result)
+            if is_legacy and "confidence" not in raw_result:
+                # Legacy deterministic stub adapter (no model confidence
+                # concept); treat its single candidate as trusted.
+                response.confidence = 0.8
+                if not response.evidence:
+                    response.evidence = ["legacy deterministic adapter"]
+        except Exception as exc:
+            triage_error = triage_error or f"invalid triage response: {exc}"[:200]
+            response = TriageResponse(status="error")
+    else:
+        triage_error = triage_error or "unexpected triage response type"
+        response = TriageResponse(status="error")
+
+    # Pre-existing candidates join the pool as low-trust candidates;
+    # BR-2 enforcement below decides their fate (legacy behavior
+    # preserved when no repository tree was supplied).
+    for path in state.target_files:
+        response.candidates.append(TriageCandidate(
+            path=path, confidence=0.5,
+            evidence="pre-existing state target_files", kind="direct"))
+
+    if triage_error:
+        response.status = "error"
+    enforced = enforce_triage_response(
+        response, repo_tree=context.get("repository_files") or [],
+        actionable_element_ids=actionable_ids, all_element_ids=all_ids,
+        # Live model output must validate against the real tree; the
+        # legacy stub keeps its tested no-tree offline behavior.
+        require_tree=not is_legacy)
+    if triage_error:
+        enforced.target_files = [
+            f for f in state.target_files if not _is_protected(f)
+        ][:2] if not context.get("repository_files") else enforced.target_files
+
+    state.target_files = list(enforced.target_files)
+    merged = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
+    if enforced.lca_element_id is not None:
+        merged["lca_element_id"] = enforced.lca_element_id
+    if enforced.lca_dom:
+        merged["lca_dom"] = enforced.lca_dom
+    if enforced.triage_summary:
+        merged["triage_summary"] = enforced.triage_summary
+    merged["triage_status"] = enforced.status
+    merged["triage_confidence"] = enforced.confidence
+    merged["filtered_intentional_element_ids"] = sorted(intentional)
+    merged["triage_rejected_targets"] = [
+        r.model_dump() for r in enforced.rejected_targets]
+    if triage_error:
+        merged["triage_error"] = triage_error
+    state.repair_spec = merged
     return state
 
 
