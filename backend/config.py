@@ -15,6 +15,12 @@ class Settings(BaseSettings):
 
     # Core AI & Service Credentials
     META_API_KEY: str = Field(default="", description="API Key for Meta SAM & Muse models")
+    META_BASE_URL: str = Field(default="", description="Meta AI endpoint base URL (AsyncOpenAI base_url per TDS)")
+    # SAM 3.1 transport (endpoint path is NOT published in project docs;
+    # leave empty until the real contract is configured - never guessed)
+    SAM31_ENDPOINT_PATH: str = Field(default="")
+    SAM31_MAX_BATCH_SIZE: int = Field(default=40)
+    SAM31_TIMEOUT_SECONDS: float = Field(default=10.0)
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://visorqa:visorqa@localhost:5432/visorqa",
         description="SQLModel Database connection URL"
