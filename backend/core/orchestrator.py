@@ -51,6 +51,7 @@ __all__ = [
     "triage_files_muse_spark",
     "diagnose_muse_wonder",
     "patch_with_muse_code",
+    "patch_muse_code_and_apply",
     "verify_with_sam",
     "compute_health_score",
     "is_patch_safe",
@@ -146,6 +147,15 @@ def _default_wonder() -> Any:
 
 
 def _default_code() -> Any:
+    # Real Muse Code client only when the Meta Model API is fully
+    # configured (key present; base URL and model carry Meta defaults);
+    # otherwise the deterministic legacy stub keeps offline runs and
+    # tests working (no fabricated network results).
+    if settings.META_API_KEY and settings.META_BASE_URL and \
+            getattr(settings, "MUSE_CODE_MODEL", ""):
+        from backend.adapters.code_client import MuseCodePatchClient
+
+        return MuseCodePatchClient()
     from backend.adapters.muse_clients import MuseCodeClient
 
     return MuseCodeClient()
@@ -486,31 +496,173 @@ async def diagnose_muse_wonder(
 # Node 4 - PATCH (Muse Code unified diff + BR-4 guard)
 # ---------------------------------------------------------------------------
 
-async def patch_with_muse_code(
+async def patch_muse_code_and_apply(
     state: AgentState, code_client: Any = None
 ) -> AgentState:
-    """Synthesise ``current_patch`` from ``repair_spec`` (no protected files)."""
+    """Node 4: synthesize, validate, and apply a minimal Unified Diff.
+
+    Muse Code proposes; deterministic machinery in ``backend.core
+    .patch`` disposes: the response is normalized (Markdown fences /
+    separable prose removed, patch content verbatim), parsed strictly
+    (header agreement, exact hunk counts), authorized against Node 2
+    targets and the Node 3 RepairSpec target (BR-2 protected paths
+    always rejected), screened for BR-4/hide hacks, then applied to
+    the exact original bytes with stale detection and an atomic,
+    self-verifying write. Only after the file change actually occurs
+    does ``state.current_patch`` hold the normalized applied diff and
+    ``repair_spec["patched_files"]`` the changed path -- Node 5
+    (VERIFY) consumes both through its existing contract and remains
+    responsible for the verified verdict. Any failure records
+    ``patch_status="error"`` and exposes no rejected diff as applied.
+    The legacy stub adapter keeps its offline contract (diff text
+    only, no disk writes).
+    """
+    from backend.core.diagnose import (
+        DIAGNOSIS_FIELDS,
+        authorized_targets,
+        build_attempt_feedback,
+        validate_repair_spec,
+        viewport_name,
+    )
+    from backend.core.patch import (
+        PatchValidationError,
+        apply_and_commit,
+        authorize_patch,
+        check_patch_policy,
+        normalize_diff,
+        parse_unified_diff,
+        read_snapshot,
+        tailwind_config_excerpt,
+    )
+    from backend.core.state import RepairSpec
+    from backend.core.triage import normalize_path
+
     state.transition_to(FSMStep.PATCH)
-    safe_targets = [f for f in state.target_files if not _is_protected(f)]
+    repair_spec: Dict[str, Any] = (
+        dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {})
+
+    def fail(reason: str) -> AgentState:
+        merged = dict(repair_spec)
+        merged["patch_status"] = "error"
+        merged["patch_error"] = reason[:300]
+        state.repair_spec = merged
+        state.current_patch = ""  # never expose a rejected diff
+        return state
+
+    safe_targets = authorized_targets(state)
     if state.target_files and not safe_targets:
         state.current_patch = ""
-        spec = dict(state.repair_spec)
-        spec["patch_skipped"] = "BR-2: all target files are protected"
-        state.repair_spec = spec
+        merged = dict(repair_spec)
+        merged["patch_skipped"] = "BR-2: all target files are protected"
+        merged["patch_status"] = "skipped"
+        state.repair_spec = merged
         return state
 
     code = code_client or _default_code()
-    file_path = safe_targets[0] if safe_targets else ""
-    source_code = str(state.repair_spec.get("source_code", ""))
+    if not hasattr(code, "generate_diff"):
+        # Legacy stub adapter contract (offline deterministic runs).
+        file_path = safe_targets[0] if safe_targets else ""
+        source_code = str(repair_spec.get("source_code", ""))
+        try:
+            patch = await code.generate_patch(
+                source_code, dict(repair_spec), file_path)
+        except Exception as exc:
+            patch = ""
+            merged = dict(repair_spec)
+            merged["patch_error"] = str(exc)
+            state.repair_spec = merged
+        state.current_patch = patch or ""
+        return state
+
+    # -- Real path: validate Node 3 output before any model call. ----
     try:
-        patch = await code.generate_patch(source_code, dict(state.repair_spec), file_path)
+        spec_model = RepairSpec.model_validate(
+            {key: repair_spec.get(key) for key in DIAGNOSIS_FIELDS})
+    except Exception:
+        return fail("missing or invalid RepairSpec from Node 3")
+    if repair_spec.get("diagnose_status") not in (None, "resolved"):
+        return fail("Node 3 diagnosis is not resolved")
+    if not safe_targets:
+        return fail("no authorized target files from Node 2")
+    target = normalize_path(spec_model.target_file)
+    if target is None or target not in safe_targets:
+        return fail("RepairSpec target not authorized by Node 2")
+    try:
+        spec_model = validate_repair_spec(spec_model, state)
     except Exception as exc:
-        patch = ""
-        spec = dict(state.repair_spec)
-        spec["patch_error"] = str(exc)
-        state.repair_spec = spec
-    state.current_patch = patch or ""
+        return fail(f"invalid RepairSpec: {exc}")
+
+    # -- Read exact originals; the target must exist on disk. --------
+    try:
+        snapshot = read_snapshot(state, target)
+    except PatchValidationError as exc:
+        return fail(str(exc))
+    files: List[Dict[str, Any]] = []
+    for path in safe_targets:
+        if path == target:
+            files.append({"path": path, "status": "ready",
+                          "language": snapshot.language,
+                          "sha256": snapshot.sha256,
+                          "content": snapshot.text})
+        else:
+            try:
+                other = read_snapshot(state, path)
+                files.append({"path": path, "status": "ready",
+                              "language": other.language,
+                              "sha256": other.sha256,
+                              "content": other.text})
+            except PatchValidationError as exc:
+                files.append({"path": path, "status": "unavailable",
+                              "reason": str(exc)})
+
+    first = state.anomalies[0] if state.anomalies else None
+    context: Dict[str, Any] = {
+        "repair_spec": spec_model.model_dump(),
+        "target_file": target,
+        "defect": {
+            "element_id": first.element_id if first else None,
+            "defect_type": first.defect_type.value if first else None,
+            "viewport": (viewport_name(first.viewport)
+                         if first and first.viewport else None),
+            "metrics": {
+                "V_r": first.visibility_ratio if first else None,
+                "IoU": first.iou_score if first else None,
+                "Delta_x_px": first.bleed_px if first else None,
+            },
+        },
+        "tailwind_config": tailwind_config_excerpt(state),
+        "feedback": build_attempt_feedback(state, repair_spec),
+        "files": files,
+    }
+
+    # -- Model proposal -> normalize -> parse -> authorize -> apply. -
+    try:
+        raw = await code.generate_diff(context)
+        normalized = normalize_diff(raw)
+        parsed = parse_unified_diff(normalized)
+        patch = authorize_patch(parsed, state, target)
+        check_patch_policy(normalized)
+        apply_and_commit(state, patch, snapshot)
+    except PatchValidationError as exc:
+        return fail(str(exc))
+    except Exception as exc:  # endpoint/transport failure: no fabrication
+        return fail(f"{type(exc).__name__}: {exc}")
+
+    merged = dict(repair_spec)
+    merged["patch_status"] = "applied"
+    merged["patched_files"] = [target]
+    merged["patch_attempt"] = state.attempt
+    merged.pop("patch_error", None)
+    state.repair_spec = merged
+    state.current_patch = normalized
     return state
+
+
+async def patch_with_muse_code(
+    state: AgentState, code_client: Any = None
+) -> AgentState:
+    """Backwards-compatible name for the Node 4 patch-and-apply node."""
+    return await patch_muse_code_and_apply(state, code_client=code_client)
 
 
 # Backwards-compatible alias (TDS names the coder step by model role).
