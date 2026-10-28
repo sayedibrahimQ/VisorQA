@@ -302,9 +302,31 @@ async def ws_broadcast(event_type: str, state: Any) -> float:
 
 @router.get("/runs")
 async def list_runs() -> List[Dict[str, Any]]:
-    """Lists recent PR QA Runs for the Mission Control dashboard"""
-    return [
-        {
+    """Lists recent PR QA Runs for the Mission Control dashboard from DB, with fallback to demo run"""
+    results: List[Dict[str, Any]] = []
+    try:
+        from backend.db.repository import AsyncSessionLocal, RunRepository
+        async with AsyncSessionLocal() as session:
+            repo = RunRepository(session)
+            db_runs = await repo.list_runs(limit=50)
+            for r in db_runs:
+                results.append({
+                    "id": r.id,
+                    "pr_number": r.pr_number,
+                    "repo_name": r.repo_full_name,
+                    "branch": r.branch,
+                    "commit_sha": r.commit_sha,
+                    "status": r.status,
+                    "current_step": "1.SENSE",
+                    "strikes": r.attempt,
+                    "anomalies_count": len(r.anomalies) if r.anomalies else 0,
+                })
+    except Exception as e:
+        logger.warning(f"Could not load runs from database: {e}")
+
+    # Ensure demo runs are also available for inspection if list is empty or for demo-42
+    if not any(r["id"] == "run-demo-42" for r in results):
+        results.append({
             "id": "run-demo-42",
             "pr_number": 42,
             "repo_name": "sayedibrahimQ/VisorQA",
@@ -314,13 +336,54 @@ async def list_runs() -> List[Dict[str, Any]]:
             "current_step": "1.SENSE",
             "strikes": 0,
             "anomalies_count": 1,
-        }
-    ]
+        })
+    return results
 
 
 @router.get("/runs/{run_id}")
 async def get_run_details(run_id: str) -> Dict[str, Any]:
-    """Retrieves deep-link run details for Inspector permalink view"""
+    """Retrieves deep-link run details for Inspector permalink view from DB or demo fallback"""
+    try:
+        from backend.db.repository import AsyncSessionLocal, RunRepository
+        async with AsyncSessionLocal() as session:
+            repo = RunRepository(session)
+            run = await repo.get_run_by_id(run_id)
+            if run:
+                return {
+                    "id": run.id,
+                    "pr_number": run.pr_number,
+                    "repo_name": run.repo_full_name,
+                    "branch": run.branch,
+                    "commit_sha": run.commit_sha,
+                    "status": run.status,
+                    "current_step": "1.SENSE",
+                    "strikes": run.attempt,
+                    "anomalies": [
+                        {
+                            "id": a.id,
+                            "element_id": a.element_id,
+                            "defect_type": a.defect_type,
+                            "visibility_ratio": a.visibility_ratio,
+                            "iou_score": a.iou_score,
+                            "status": a.status,
+                        }
+                        for a in (run.anomalies or [])
+                    ],
+                    "attempts": [
+                        {
+                            "id": att.id,
+                            "attempt_number": att.attempt_number,
+                            "repair_spec": att.repair_spec,
+                            "unified_diff": att.unified_diff,
+                            "passed": att.passed,
+                        }
+                        for att in (run.attempts or [])
+                    ],
+                }
+    except Exception as e:
+        logger.warning(f"Could not load run {run_id} from database: {e}")
+
+    # Fallback to demo run details
     return {
         "id": run_id,
         "pr_number": 42,
