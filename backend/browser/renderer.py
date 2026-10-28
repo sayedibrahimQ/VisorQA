@@ -33,6 +33,7 @@ from backend.browser.schemas import (
     DualViewportResult,
     ElementGeometry,
     ElementStatus,
+    HierarchyRecord,
     ViewportRenderResult,
 )
 from backend.config import settings
@@ -219,6 +220,195 @@ _INJECT_JS = r"""
 }
 """
 
+# Hierarchy + LCA extraction. Single page.evaluate() per viewport.
+# Adjacency rule (explicit): an "adjacent sibling pair" is two *selected*
+# elements that are consecutive selected entries in the same parent's
+# `children` collection. Arbitrary nearby / document-order elements are
+# NOT treated as siblings; caller-supplied pairs are labelled
+# `selected_pair` unless they meet the sibling rule.
+# Ancestor chains stop at <body> (structural boundary) or maxAncestorDepth.
+# React hints: explicit app markers (data-component etc.) first; Fiber-key
+# heuristic second and always marked source="heuristic". Form values are
+# never read (password fields yield no text hint at all).
+_HIERARCHY_JS = r"""
+({ids, maxAncestorDepth, pairs}) => {
+  const MAX_DEPTH = maxAncestorDepth || 8;
+  const trunc = (s, n) => (s || '').trim().replace(/\s+/g, ' ').slice(0, n);
+  function cssSignature(el) {
+    if (!el || !el.isConnected) return null;
+    const cs = window.getComputedStyle(el);
+    const pick = (p) => cs.getPropertyValue(p) || '';
+    return {position: pick('position'), 'z-index': pick('z-index'),
+      display: pick('display'), 'flex-direction': pick('flex-direction'),
+      'flex-wrap': pick('flex-wrap'), overflow: pick('overflow'),
+      'overflow-x': pick('overflow-x'), 'overflow-y': pick('overflow-y'),
+      width: pick('width'), 'max-width': pick('max-width')};
+  }
+  function reactHint(el) {
+    const ATTRS = ['data-component', 'data-react-component',
+      'data-component-name', 'data-visor-component'];
+    try {
+      const marked = el.closest(ATTRS.map(a => '[' + a + ']').join(','));
+      if (marked) for (const a of ATTRS) {
+        const v = marked.getAttribute(a);
+        if (v) return {react_hint: trunc(v, 80),
+                       react_hint_source: 'explicit_marker'};
+      }
+    } catch (e) {}
+    try {
+      const key = Object.keys(el).find(k =>
+        k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$'));
+      if (key) {
+        let node = el[key], hops = 0;
+        while (node && hops < 16) {
+          const t = node.type;
+          const name = (t && (t.displayName ||
+            (typeof t === 'function' && t.name) ||
+            (typeof t === 'object' && t.name))) || '';
+          if (name && typeof t !== 'string')
+            return {react_hint: trunc(String(name), 80),
+                    react_hint_source: 'heuristic'};
+          node = node.return; hops += 1;
+        }
+        return {react_hint: null, react_hint_source: 'heuristic'};
+      }
+    } catch (e) {}
+    return {react_hint: null, react_hint_source: null};
+  }
+  function descriptor(el) {
+    if (!el) return null;
+    const tag = el.tagName.toLowerCase();
+    const isForm = ['input','select','textarea'].includes(tag);
+    const isPassword = tag === 'input' &&
+      (el.getAttribute('type') || '') === 'password';
+    let text = el.getAttribute('aria-label') || '';
+    if (!text && isForm && !isPassword)
+      text = el.getAttribute('placeholder') || el.getAttribute('name') || '';
+    if (!text && !isForm) text = el.innerText || '';
+    const hint = reactHint(el);
+    return {tag, id: el.id || '',
+      classes: Array.from(el.classList || []).slice(0, 8)
+        .map(c => trunc(c, 48)),
+      'data-visor-el-id': el.getAttribute('data-visor-el-id'),
+      role: el.getAttribute('role'),
+      'aria-label': trunc(el.getAttribute('aria-label') || '', 80) || null,
+      'data-testid': el.getAttribute('data-testid'),
+      text_hint: trunc(text, 60), ...hint};
+  }
+  function ancestorsInclusive(el) {
+    const out = []; let cur = el, guard = 0;
+    while (cur && cur.nodeType === 1 && guard < 64) {
+      out.push(cur); guard += 1;
+      if (cur === document.body) break;
+      cur = cur.parentElement;
+    }
+    return out;
+  }
+  function findLCA(a, b) {
+    if (!a || !b) return {lca: null, status: 'detached'};
+    if (!a.isConnected || !b.isConnected)
+      return {lca: null, status: 'detached'};
+    if (a === b) return {lca: a, status: 'identical'};
+    const setA = new Set(ancestorsInclusive(a));
+    let cur = b, guard = 0;
+    while (cur && cur.nodeType === 1 && guard < 64) {
+      if (setA.has(cur)) return {lca: cur, status: 'found'};
+      if (cur === document.body) break;
+      cur = cur.parentElement; guard += 1;
+    }
+    return {lca: null, status: 'no_common_ancestor'};
+  }
+  function byId(id) {
+    if (!id) return null;
+    try { return document.querySelector(
+      '[data-visor-el-id="' + CSS.escape(id) + '"]'); }
+    catch (e) { return null; }
+  }
+  const resolved = new Map(ids.map(id => [id, byId(id)]));
+  const records = [];
+  // 1) element_ancestry per selected element (LCA of element with itself).
+  for (const id of ids) {
+    const el = resolved.get(id);
+    if (!id) { records.push({relationship: 'element_ancestry',
+      element_ids: [id], element: null, ancestor_chain: [],
+      lca: null, lca_found: false, lca_status: 'missing_id',
+      lca_css_signature: null, element_css_signatures: {}}); continue; }
+    if (!el || !el.isConnected) {
+      records.push({relationship: 'element_ancestry', element_ids: [id],
+        element: null, ancestor_chain: [], lca: null, lca_found: false,
+        lca_status: 'detached',
+        notes: 'element not found in document (detached or removed)',
+        lca_css_signature: null, element_css_signatures: {}}); continue; }
+    const chain = ancestorsInclusive(el).slice(1, MAX_DEPTH + 1);
+    records.push({relationship: 'element_ancestry', element_ids: [id],
+      element: descriptor(el), sibling: null,
+      ancestor_chain: chain.map(descriptor),
+      chain_truncated: chain.length >= MAX_DEPTH &&
+        chain[chain.length - 1] !== document.body,
+      lca: descriptor(el), lca_found: true, lca_status: 'identical',
+      notes: 'self-LCA: lowest common ancestor of the element with itself',
+      lca_css_signature: cssSignature(el),
+      element_css_signatures: {[id]: cssSignature(el)}});
+  }
+  // 2) adjacent sibling pairs: consecutive selected children per parent.
+  const pairKeys = new Set(); const pairList = [];
+  const byParent = new Map();
+  for (const id of ids) {
+    const el = resolved.get(id);
+    if (!el || !el.isConnected || !el.parentElement) continue;
+    const p = el.parentElement;
+    if (!byParent.has(p)) byParent.set(p, []);
+    byParent.get(p).push(id);
+  }
+  for (const [parent, childIds] of byParent) {
+    const ordered = childIds.slice().sort((a, b) => {
+      const kids = Array.from(parent.children);
+      return kids.indexOf(resolved.get(a)) - kids.indexOf(resolved.get(b));
+    });
+    for (let i = 0; i + 1 < ordered.length; i++) {
+      const key = ordered[i] + '|' + ordered[i + 1];
+      if (!pairKeys.has(key)) { pairKeys.add(key);
+        pairList.push([ordered[i], ordered[i + 1],
+                       'adjacent_sibling_pair']); }
+    }
+  }
+  // 3) caller-supplied pairs (never silently relabelled as siblings).
+  for (const pr of (pairs || [])) {
+    if (!Array.isArray(pr) || pr.length !== 2) continue;
+    const key = pr[0] + '|' + pr[1];
+    if (pairKeys.has(key)) continue;
+    pairKeys.add(key);
+    const a = resolved.get(pr[0]) || byId(pr[0]);
+    const b = resolved.get(pr[1]) || byId(pr[1]);
+    const sibling = a && b && a.parentElement &&
+      a.parentElement === b.parentElement;
+    pairList.push([pr[0], pr[1],
+      sibling ? 'adjacent_sibling_pair' : 'selected_pair']);
+  }
+  for (const [idA, idB, rel] of pairList) {
+    const a = resolved.get(idA) || byId(idA);
+    const b = resolved.get(idB) || byId(idB);
+    const {lca, status} = findLCA(a, b);
+    const chain = lca ? ancestorsInclusive(lca).slice(0, MAX_DEPTH) : [];
+    const css = {};
+    if (a) css[idA] = cssSignature(a);
+    if (b) css[idB] = cssSignature(b);
+    records.push({relationship: rel, element_ids: [idA, idB],
+      element: a ? descriptor(a) : null,
+      sibling: b ? descriptor(b) : null,
+      ancestor_chain: chain.map(descriptor),
+      chain_truncated: chain.length >= MAX_DEPTH &&
+        chain[chain.length - 1] !== document.body,
+      lca: lca ? descriptor(lca) : null,
+      lca_found: !!lca, lca_status: status,
+      lca_css_signature: lca ? cssSignature(lca) : null,
+      element_css_signatures: css});
+  }
+  return records;
+}
+"""
+
+
 def _build_geometry(
     injected: List[Dict[str, Any]],
     raw: List[Dict[str, Any]],
@@ -255,6 +445,38 @@ def _build_geometry(
     return out
 
 
+def _build_hierarchy(
+    raw: List[Dict[str, Any]], viewport_name: str
+) -> List["HierarchyRecord"]:
+    out: List[HierarchyRecord] = []
+    for item in raw or []:
+        item = {**item, "viewport": viewport_name}
+        # JS emits null CSS signatures for detached nodes; drop null values
+        # in element_css_signatures so typed validation stays clean.
+        if isinstance(item.get("element_css_signatures"), dict):
+            item["element_css_signatures"] = {
+                k: v for k, v in item["element_css_signatures"].items() if v
+            }
+        out.append(HierarchyRecord(**item))
+    return out
+
+
+async def extract_hierarchy(
+    page: Any,
+    ids: Sequence[str],
+    pairs: Optional[Sequence[Sequence[str]]] = None,
+    max_ancestor_depth: int = 8,
+    viewport_name: str = "",
+) -> List["HierarchyRecord"]:
+    """Run the single LCA ``page.evaluate()`` for already-identified IDs."""
+    raw = await page.evaluate(
+        _HIERARCHY_JS,
+        {"ids": list(ids), "maxAncestorDepth": int(max_ancestor_depth),
+         "pairs": [list(p) for p in (pairs or [])]},
+    )
+    return _build_hierarchy(raw, viewport_name)
+
+
 class PlaywrightDualViewportRenderer:
     """Render one URL at both viewports; isolate failures per viewport."""
 
@@ -265,6 +487,8 @@ class PlaywrightDualViewportRenderer:
         network_idle_timeout_ms: int = 3000,
         allowed_schemes: Optional[Sequence[str]] = None,
         headless: bool = True,
+        max_ancestor_depth: int = 8,
+        include_hierarchy: bool = True,
     ) -> None:
         self.navigation_timeout_ms = int(
             navigation_timeout_ms
@@ -274,6 +498,8 @@ class PlaywrightDualViewportRenderer:
         self.network_idle_timeout_ms = network_idle_timeout_ms
         self.allowed_schemes = allowed_schemes
         self.headless = headless
+        self.max_ancestor_depth = int(max_ancestor_depth)
+        self.include_hierarchy = include_hierarchy
 
     async def render_all(
         self, preview_url: str, output_dir: Optional[str | Path] = None
@@ -397,6 +623,11 @@ class PlaywrightDualViewportRenderer:
             vp.element_count = len(elements)
             vp.target_range_met = (
                 MIN_TARGET_ELEMENTS <= len(elements) <= MAX_ELEMENTS)
+            if self.include_hierarchy and ids:
+                vp.hierarchy = await extract_hierarchy(
+                    page, ids,
+                    max_ancestor_depth=self.max_ancestor_depth,
+                    viewport_name=name)
             # Screenshot last, with no scroll/mutation after extraction,
             # so geometry and pixels describe the same layout state.
             shot = run_dir / f"{name}.png"
