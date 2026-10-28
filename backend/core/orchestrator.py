@@ -131,6 +131,15 @@ def _default_spark() -> Any:
 
 
 def _default_wonder() -> Any:
+    # Real Muse Wonder client only when the Meta Model API is fully
+    # configured (key present; base URL and model carry Meta defaults);
+    # otherwise the deterministic legacy stub keeps offline runs and
+    # tests working (no fabricated network results).
+    if settings.META_API_KEY and settings.META_BASE_URL and \
+            getattr(settings, "MUSE_WONDER_MODEL", ""):
+        from backend.adapters.wonder_client import MuseWonderDiagnosisClient
+
+        return MuseWonderDiagnosisClient()
     from backend.adapters.muse_clients import MuseWonderClient
 
     return MuseWonderClient()
@@ -384,9 +393,61 @@ async def triage_files_muse_spark(
 async def diagnose_muse_wonder(
     state: AgentState, wonder_client: Any = None
 ) -> AgentState:
-    """Produce a structured JSON ``repair_spec``; never writes raw code."""
+    """Produce a structured ``RepairSpec``; never writes raw code.
+
+    Muse Wonder proposes from the collision overlay + metrics + LCA;
+    deterministic validation in ``backend.core.diagnose`` disposes
+    (Node 2-authorized target, BR-2, grounded selectors, no patch
+    code). Only validated diagnosis fields merge into ``repair_spec``;
+    Node 2 triage metadata survives success and failure alike. Model
+    or endpoint failure records ``diagnose_status="error"`` and never
+    fabricates a diagnosis. The legacy stub adapter keeps its offline
+    dict contract.
+    """
+    from backend.core.diagnose import (
+        DIAGNOSIS_FIELDS,
+        PROTECTED_TRIAGE_KEYS,
+        build_diagnosis_context,
+        validate_repair_spec,
+    )
+    from backend.core.state import RepairSpec
+
     state.transition_to(FSMStep.DIAGNOSE)
     wonder = wonder_client or _default_wonder()
+    first = state.anomalies[0] if state.anomalies else None
+    merged: Dict[str, Any] = (
+        dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {})
+
+    def finalize() -> AgentState:
+        merged.setdefault(
+            "defect_type",
+            first.defect_type.value if first else "OCCLUSION")
+        merged["target_files"] = list(state.target_files)
+        merged["attempt"] = state.attempt
+        state.repair_spec = merged
+        return state
+
+    if hasattr(wonder, "diagnose"):
+        context, overlay_image = build_diagnosis_context(state)
+        merged["diagnose_overlay_status"] = context["overlay"]["status"]
+        try:
+            raw = await wonder.diagnose(context, overlay_image)
+            spec_model = raw if isinstance(raw, RepairSpec) else \
+                RepairSpec.model_validate(raw)
+            validated = validate_repair_spec(spec_model, state)
+        except Exception as exc:
+            merged["diagnose_status"] = "error"
+            merged["diagnose_error"] = f"{type(exc).__name__}: {exc}"[:200]
+            return finalize()
+        data = validated.model_dump()
+        for key in DIAGNOSIS_FIELDS:
+            merged[key] = data[key]
+        merged["fix_strategy"] = validated.css_strategy
+        merged["diagnose_status"] = "resolved"
+        merged.pop("diagnose_error", None)
+        return finalize()
+
+    # Legacy stub adapter contract (offline deterministic runs).
     triage_info: Dict[str, Any] = {
         "target_files": list(state.target_files),
         "lca_element_id": state.repair_spec.get("lca_element_id"),
@@ -394,17 +455,22 @@ async def diagnose_muse_wonder(
         "anomalies": [a.model_dump(mode="json") for a in state.anomalies],
         "attempt": state.attempt,
     }
-    computed_styles: Dict[str, Any] = dict(state.repair_spec.get("computed_styles", {}))
+    computed_styles: Dict[str, Any] = dict(
+        state.repair_spec.get("computed_styles", {}))
+    diagnose_failed = False
     try:
         result: Dict[str, Any] = await wonder.diagnose_defect(
             b"", computed_styles, triage_info
         ) or {}
     except Exception as exc:  # deterministic fallback spec
-        result = {"diagnosis": f"diagnosis unavailable: {exc}", "recommended_fix": ""}
+        diagnose_failed = True
+        result = {"diagnosis": f"diagnosis unavailable: {exc}",
+                  "recommended_fix": ""}
 
-    spec: Dict[str, Any] = dict(result.get("repair_spec", result)) if isinstance(result, dict) else {}
-    first = state.anomalies[0] if state.anomalies else None
-    merged: Dict[str, Any] = dict(state.repair_spec)
+    spec: Dict[str, Any] = dict(result.get("repair_spec", result)) \
+        if isinstance(result, dict) else {}
+    for key in PROTECTED_TRIAGE_KEYS:
+        spec.pop(key, None)  # model output never overwrites triage
     merged.update(spec)
     if "root_cause" not in merged:
         merged["root_cause"] = merged.pop("diagnosis", "") or (
@@ -412,11 +478,8 @@ async def diagnose_muse_wonder(
         )
     if "fix_strategy" not in merged:
         merged["fix_strategy"] = merged.pop("recommended_fix", "")
-    merged.setdefault("defect_type", first.defect_type.value if first else "OCCLUSION")
-    merged["target_files"] = list(state.target_files)
-    merged["attempt"] = state.attempt
-    state.repair_spec = merged
-    return state
+    merged["diagnose_status"] = "error" if diagnose_failed else "resolved"
+    return finalize()
 
 
 # ---------------------------------------------------------------------------
