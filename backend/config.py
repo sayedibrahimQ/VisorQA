@@ -44,5 +44,10 @@ class Settings(BaseSettings):
         description="3-Strike Self-Healing Loop limit"
     )
 
+    # Browser Renderer (SENSE node)
+    BROWSER_NAV_TIMEOUT_MS: int = Field(default=30000)
+    BROWSER_ALLOWED_SCHEMES: str = Field(default="http,https")
+    BROWSER_ARTIFACTS_DIR: str = Field(default="artifacts")
+
 
 settings = Settings()
