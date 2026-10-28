@@ -44,3 +44,4 @@ jobs:
           if npm run | grep -q "build"; then
             npm run build
           fi
+

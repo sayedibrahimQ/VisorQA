@@ -8,3 +8,4 @@ ignore = [
     "E501",  # line length handled by formatter
     "EXE002", # file executable permissions
 ]
+
