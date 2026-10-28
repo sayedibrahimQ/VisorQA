@@ -6,6 +6,7 @@ from .sandbox_runner import SandboxRunnerStrategy, ModalSandboxRunner, LocalPlay
 from .muse_clients import SAM31Client, MuseSparkClient, MuseWonderClient, MuseCodeClient
 from .spark_client import MuseSparkTriageClient
 from .wonder_client import MuseWonderDiagnosisClient
+from .code_client import MuseCodePatchClient
 from .sam31 import (
     ElementPrompt,
     MetaSAMTransport,
@@ -22,6 +23,7 @@ __all__ = [
     "PointGuidedSAM31Client",
     "MuseSparkTriageClient",
     "MuseWonderDiagnosisClient",
+    "MuseCodePatchClient",
     "MetaSAMTransport",
     "ElementPrompt",
     "SegmentationBatchResult",

@@ -407,6 +407,7 @@ All configuration is managed via environment variables with Pydantic Settings va
 | `META_BASE_URL` | `https://api.meta.ai/v1` | Meta Model API base URL (Muse Spark triage) |
 | `MUSE_SPARK_MODEL` | `muse-spark-1.3` | Muse Spark triage model |
 | `MUSE_WONDER_MODEL` | `muse-wonder-1.0` | Muse Wonder diagnosis model |
+| `MUSE_CODE_MODEL` | `muse-spark-1.3` | Muse Code patch model (built on Muse Spark) |
 | `DATABASE_URL` | `postgresql+asyncpg://visorqa:visorqa@localhost:5432/visorqa` | PostgreSQL connection string |
 | `GITHUB_PAT` | -- | GitHub Personal Access Token (repo + pull_request scopes) |
 | `GITHUB_WEBHOOK_SECRET` | -- | HMAC-SHA256 secret for webhook signature verification |

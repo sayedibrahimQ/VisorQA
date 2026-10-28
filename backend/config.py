@@ -34,6 +34,13 @@ class Settings(BaseSettings):
         description="Muse Wonder diagnosis model served by the Meta Model API",
     )
     WONDER_TIMEOUT_SECONDS: float = Field(default=30.0)
+    # Muse Code is Meta's coding agent built on Muse Spark; on the
+    # Model API the same Spark model serves the code-generation role.
+    MUSE_CODE_MODEL: str = Field(
+        default="muse-spark-1.3",
+        description="Muse Code patch model served by the Meta Model API",
+    )
+    CODE_TIMEOUT_SECONDS: float = Field(default=30.0)
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://visorqa:visorqa@localhost:5432/visorqa",
         description="SQLModel Database connection URL"
