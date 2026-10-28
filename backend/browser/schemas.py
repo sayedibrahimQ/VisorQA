@@ -13,7 +13,7 @@ Floating-point precision from ``getBoundingClientRect()`` is preserved.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -145,11 +145,38 @@ class ViewportRenderResult(BaseModel):
         return self.error is None
 
 
+class DefectRegion(BaseModel):
+    """A defect-relevant SAM mask region, labelled by existing results."""
+
+    element_id: str = ""
+    # From DefectType where available (OCCLUSION | COLLISION |
+    # VIEWPORT_OVERFLOW). Passed through, never inferred from pixels.
+    defect_type: Optional[str] = None
+    box: Optional[Dict[str, float]] = None  # B_DOM (x, y, width, height)
+
+
+class OverlayArtifact(BaseModel):
+    """Metadata for one generated collision-overlay PNG."""
+
+    run_id: str
+    viewport: str = ""
+    artifact_type: str = "collision_overlay"
+    status: str = "skipped"  # generated | skipped | error
+    path: Optional[str] = None
+    url: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    defect_element_ids: List[str] = Field(default_factory=list)
+    defect_types: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
 class DualViewportResult(BaseModel):
     run_id: str
     preview_url: str  # sanitized (no credentials / query secrets)
     output_dir: str
     geometry_path: Optional[str] = None
+    overlays: List[OverlayArtifact] = Field(default_factory=list)
     viewports: List[ViewportRenderResult] = Field(default_factory=list)
     success: bool = False
     errors: List[str] = Field(default_factory=list)

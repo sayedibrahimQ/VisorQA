@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     BROWSER_NAV_TIMEOUT_MS: int = Field(default=30000)
     BROWSER_ALLOWED_SCHEMES: str = Field(default="http,https")
     BROWSER_ARTIFACTS_DIR: str = Field(default="artifacts")
+    STATIC_ARTIFACTS_DIR: str = Field(default="static/artifacts")
 
 
 settings = Settings()

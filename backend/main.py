@@ -8,6 +8,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+from pathlib import Path
+
+from fastapi.staticfiles import StaticFiles
+
 from backend.config import settings
 from backend.api.webhooks import router as webhooks_router
 from backend.api.routes_ws import router as ws_router
@@ -44,6 +48,13 @@ app.add_middleware(
 # Include Controller Routers
 app.include_router(webhooks_router)
 app.include_router(ws_router)
+
+# Static artifacts for Mission Control (collision overlays, screenshots).
+# Files live under <repo>/static/artifacts/{run_id}/ and are served at
+# /static/artifacts/{run_id}/... (see backend.browser.overlay).
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+(_STATIC_DIR / "artifacts").mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 # Mount root WebSocket endpoint for Jira requirement /ws/mission-control
 from backend.api.routes_ws import mission_control_ws_endpoint
