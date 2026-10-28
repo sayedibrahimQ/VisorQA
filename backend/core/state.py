@@ -145,6 +145,48 @@ class Anomaly(BaseModel):
         return self.iou_score
 
 
+class TriageCandidate(BaseModel):
+    """One evidence-backed source-file candidate from Muse Spark."""
+
+    path: str
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    evidence: str = ""
+    kind: str = "direct"  # direct | parent_layout | consumer | sibling
+
+
+class RejectedTarget(BaseModel):
+    path: str = ""
+    reason: str  # protected_shared_ui | not_in_repository_tree |
+    # malformed_path | path_traversal | low_confidence |
+    # insufficient_evidence | intentional_overlap_filtered
+
+
+class TriageResponse(BaseModel):
+    """Muse Spark source-localization contract (Node 2 TRIAGE).
+
+    Consumed by ``triage_files_muse_spark`` (which enforces BR-2 and
+    copies ``target_files`` onto ``AgentState``) and by DIAGNOSE via
+    ``repair_spec`` (``lca_element_id`` / ``lca_dom`` / ``triage_summary``).
+    ``status="unresolved"`` is the supported low-confidence outcome: it
+    must carry no direct fix targets rather than an invented file.
+    """
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    target_files: List[str] = Field(default_factory=list, max_length=2)
+    candidates: List[TriageCandidate] = Field(default_factory=list)
+    candidate_source_file: Optional[str] = None  # legacy single-file field
+    lca_element_id: Optional[str] = None
+    lca_dom: Dict[str, Any] = Field(default_factory=dict)
+    triage_summary: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    status: str = "unresolved"  # resolved | unresolved |
+    # no_actionable_defects | error
+    evidence: List[str] = Field(default_factory=list)
+    filtered_intentional_element_ids: List[str] = Field(default_factory=list)
+    rejected_targets: List[RejectedTarget] = Field(default_factory=list)
+
+
 class SelfHealingAttempt(BaseModel):
     """Single cycle within the 3-Strike Self-Healing Loop"""
 

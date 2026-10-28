@@ -2,7 +2,7 @@
 VisorQA Core Domain & Use-Case Layer
 """
 
-from .state import AgentState, FSMStep, RunStatus, Anomaly, SelfHealingAttempt, DefectType
+from .state import AgentState, FSMStep, RunStatus, Anomaly, SelfHealingAttempt, DefectType, TriageResponse, TriageCandidate
 from .vision_math import (
     BleedResult,
     CollisionResult,
@@ -25,6 +25,8 @@ from .orchestrator import VisorOrchestrator, run_visor_agent
 
 __all__ = [
     "AgentState",
+    "TriageResponse",
+    "TriageCandidate",
     "FSMStep",
     "RunStatus",
     "Anomaly",
