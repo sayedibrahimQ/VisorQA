@@ -105,9 +105,37 @@ def _anomaly_metrics(anomalies: List[Anomaly]) -> tuple[List[float], List[float]
 # ---------------------------------------------------------------------------
 
 def _default_sandbox() -> Any:
-    from backend.adapters.sandbox_runner import ModalSandboxRunner
+    # DI-selected backend (SANDBOX_BACKEND, default "local"); the
+    # orchestrator only ever sees the shared SandboxRunner interface.
+    from backend.sandbox.factory import create_sandbox_runner
 
-    return ModalSandboxRunner()
+    return create_sandbox_runner()
+
+
+async def _record_sandbox_state(state: AgentState, sandbox: Any) -> Any:
+    """Copy sandbox status into state.sandbox (Node 5 handoff)."""
+    try:
+        status = await sandbox.get_status()
+    except Exception:
+        return None
+    data = status.to_dict() if hasattr(status, "to_dict") else {}
+    state.sandbox.backend = data.get("backend", "") or state.sandbox.backend
+    state.sandbox.sandbox_id = data.get("sandbox_id")
+    state.sandbox.session_id = data.get("session_id", "")
+    state.sandbox.branch = data.get("branch", "")
+    state.sandbox.commit_sha = data.get("commit_sha", "")
+    state.sandbox.working_dir = data.get("working_dir", "")
+    state.sandbox.server_state = str(data.get("server_state", "not_started"))
+    state.sandbox.patch_count = int(data.get("patch_count", 0) or 0)
+    state.sandbox.last_patch_phase = str(data.get("last_phase", "none"))
+    state.sandbox.patch_timings = dict(data.get("timings", {}) or {})
+    try:
+        url = await sandbox.get_preview_url()
+    except Exception:
+        url = None
+    if url:
+        state.sandbox.preview_url = url
+    return status
 
 
 def _default_sam() -> Any:
@@ -192,6 +220,16 @@ async def sense_with_playwright_and_sam(
     recomputed from the sandbox/SAM adapters.
     """
     state.transition_to(FSMStep.SENSE, RunStatus.RUNNING)
+    # Node 1 workspace provisioning (VISOR-ENV-001): only for explicitly
+    # injected worktree runners; mocked/default offline runners untouched.
+    if sandbox_runner is not None and getattr(sandbox_runner, "worktree_enabled", False):
+        try:
+            if hasattr(sandbox_runner, "ensure_and_inject"):
+                await sandbox_runner.ensure_and_inject(state)
+            elif hasattr(sandbox_runner, "inject_state"):
+                sandbox_runner.inject_state(state)
+        except Exception:
+            pass
     if state.anomalies and not resense:
         return state
 
@@ -226,6 +264,24 @@ async def sense_with_playwright_and_sam(
             masks = []
 
         viewport_label = f"{vp_width}px"
+        # Per-viewport evidence for Node 5 (only when geometry was sensed).
+        try:
+            _vrs = [float(i["visibility_ratio"] if i.get("visibility_ratio") is not None else i.get("v_r"))
+                    for i in geometry if (i.get("visibility_ratio") is not None or i.get("v_r") is not None)]
+            _name = "mobile" if vp_width == 375 else "desktop"
+            _eval = {"viewport": _name, "width": vp_width, "height": vp_height,
+                     "v_r": min(_vrs) if _vrs else None,
+                     "iou": max([float(i.get("iou_score") or i.get("iou") or 0.0) for i in geometry], default=0.0),
+                     "delta_x": max([max(0.0, (float((i.get("bounding_box") or i.get("b_dom_box") or i).get("x", 0)) + float((i.get("bounding_box") or i.get("b_dom_box") or i).get("width", 0))) - float(vp_width)) for i in geometry], default=0.0),
+                     "valid": bool(_vrs), "invalid_reason": None if _vrs else "missing_sam_metrics"}
+            _spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
+            _evals = dict(_spec.get("viewport_evaluations") or {})
+            _evals[_name] = _eval
+            _spec["viewport_evaluations"] = _evals
+            _spec["viewport_metrics_attempt"] = state.attempt
+            state.repair_spec = _spec
+        except Exception:
+            pass
         for idx, (item, box) in enumerate(zip(geometry, boxes)):
             element_id = str(
                 item.get("element_id") or item.get("visor_el_id") or item.get("id") or f"visor-el-{idx}"
@@ -497,7 +553,7 @@ async def diagnose_muse_wonder(
 # ---------------------------------------------------------------------------
 
 async def patch_muse_code_and_apply(
-    state: AgentState, code_client: Any = None
+    state: AgentState, code_client: Any = None, sandbox_runner: Any = None
 ) -> AgentState:
     """Node 4: synthesize, validate, and apply a minimal Unified Diff.
 
@@ -592,6 +648,21 @@ async def patch_muse_code_and_apply(
     except Exception as exc:
         return fail(f"invalid RepairSpec: {exc}")
 
+    # -- Sandbox (when injected & active): its working dir is the FS. -
+    sandbox_status = None
+    if sandbox_runner is not None and hasattr(sandbox_runner, "apply_patch"):
+        sandbox_status = await _record_sandbox_state(state, sandbox_runner)
+        if sandbox_status is not None and getattr(sandbox_status, "working_dir", ""):
+            repair_spec = dict(repair_spec)
+            repair_spec["repo_root"] = sandbox_status.working_dir
+            state.repair_spec = repair_spec
+            if hasattr(sandbox_runner, "inject_state"):
+                try:
+                    sandbox_runner.inject_state(state)
+                    repair_spec = dict(state.repair_spec)
+                except Exception:
+                    pass
+
     # -- Read exact originals; the target must exist on disk. --------
     try:
         snapshot = read_snapshot(state, target)
@@ -636,13 +707,27 @@ async def patch_muse_code_and_apply(
     }
 
     # -- Model proposal -> normalize -> parse -> authorize -> apply. -
+    hmr_info: Dict[str, Any] = {}
     try:
         raw = await code.generate_diff(context)
         normalized = normalize_diff(raw)
         parsed = parse_unified_diff(normalized)
         patch = authorize_patch(parsed, state, target)
         check_patch_policy(normalized)
-        apply_and_commit(state, patch, snapshot)
+        if sandbox_status is not None and getattr(sandbox_status, "working_dir", ""):
+            result = await sandbox_runner.apply_patch(
+                normalized, authorized_files=safe_targets)
+            if not result.success:
+                return fail(result.error or "sandbox patch rejected")
+            state.modified_files = list(result.files_changed)
+            hmr = await sandbox_runner.wait_for_hmr(result.patch_id)
+            hmr_info = {"hmr_status": hmr.status.value,
+                        "hmr_latency_ms": hmr.latency_ms,
+                        "patch_timings": result.timings.to_dict()}
+            await _record_sandbox_state(state, sandbox_runner)
+            state.sandbox.last_hmr_status = hmr.status.value
+        else:
+            apply_and_commit(state, patch, snapshot)
     except PatchValidationError as exc:
         return fail(str(exc))
     except Exception as exc:  # endpoint/transport failure: no fabrication
@@ -650,6 +735,7 @@ async def patch_muse_code_and_apply(
 
     merged = dict(repair_spec)
     merged["patch_status"] = "applied"
+    merged.update(hmr_info)
     merged["patched_files"] = [target]
     merged["patch_attempt"] = state.attempt
     merged.pop("patch_error", None)
@@ -659,10 +745,11 @@ async def patch_muse_code_and_apply(
 
 
 async def patch_with_muse_code(
-    state: AgentState, code_client: Any = None
+    state: AgentState, code_client: Any = None, sandbox_runner: Any = None
 ) -> AgentState:
     """Backwards-compatible name for the Node 4 patch-and-apply node."""
-    return await patch_muse_code_and_apply(state, code_client=code_client)
+    return await patch_muse_code_and_apply(
+        state, code_client=code_client, sandbox_runner=sandbox_runner)
 
 
 # Backwards-compatible alias (TDS names the coder step by model role).
@@ -678,117 +765,182 @@ async def verify_with_sam(
     sandbox_runner: Any = None,
     sam_client: Any = None,
 ) -> AgentState:
-    """Re-evaluate after PATCH, update best patch, decide resolution.
+    """Node 5: strict dual-viewport verification (375px + 1440px).
 
-    Resolution (FR-07/BR-3): V_r >= 0.98, IoU == 0, bleed <= 2px and
-    no remaining anomalies. A ``SelfHealingAttempt`` already recorded
-    by PATCH (the class-level mock point) is honoured; otherwise the
-    sandbox/SAM adapters are re-sensed deterministically.
+    Both viewports must independently satisfy V_r >= 0.98, IoU == 0,
+    Delta_x <= 2px (unrounded). Missing/NaN/invalid metrics fail.
+    Patch application/HMR alone is never verification. Per-viewport
+    metrics, screenshot refs, score, and failure reasons are recorded
+    on the attempt and in repair_spec for the next strike's feedback.
+    Legacy recorded attempts / anomaly-only sense paths keep working.
     """
+    from backend.core.verify import evaluate_dual_viewport, metrics_from_anomalies
+
     state.transition_to(FSMStep.VERIFY)
+    if sandbox_runner is not None and hasattr(sandbox_runner, "get_preview_url"):
+        await _record_sandbox_state(state, sandbox_runner)
+    if sandbox_runner is not None and hasattr(sandbox_runner, "wait_for_settle"):
+        try:
+            await sandbox_runner.wait_for_settle()
+        except Exception:
+            pass
     attempt_no = state.attempt or (len(state.attempts) + 1)
+    if attempt_no > 3 or attempt_no > state.max_attempts:
+        # Hard 3-strike guardrail: never create a fourth attempt record.
+        spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
+        spec["verification_status"] = "verification_failed"
+        spec["verification_error"] = "3-strike limit reached"
+        state.repair_spec = spec
+        state.is_resolved = False
+        return state
     state.attempt = attempt_no
     state.strike_count = attempt_no
 
-    existing = next(
-        (a for a in reversed(state.attempts) if a.attempt_number == attempt_no), None
-    )
-    if existing is None and state.attempts and state.attempts[-1].post_score is None:
-        # PATCH recorded an unverified attempt with its own numbering
-        # (legacy step_4_patch contract); adopt and renumber it.
+    existing = next((a for a in reversed(state.attempts) if a.attempt_number == attempt_no), None)
+    if existing is None and state.attempts and state.attempts[-1].post_score is None and not state.attempts[-1].viewport_metrics:
         existing = state.attempts[-1]
         existing.attempt_number = attempt_no
     error_message: Optional[str] = existing.error_message if existing else None
 
-    if existing is not None and existing.verified_vr is not None:
-        vr_values = [float(existing.verified_vr)]
-        iou_values = [float(existing.verified_iou or 0.0)]
-        bleed_values = [float(existing.verified_bleed_px or 0.0)]
-        remaining = [] if existing.passed else list(state.anomalies)
-        passed = (
-            vr_values[0] >= 0.98
-            and iou_values[0] == 0.0
-            and bleed_values[0] <= 2.0
-            and (existing.passed or not remaining)
-        )
+    # --- Gather per-viewport evidence (explicit > recorded > re-sense) ---
+    raw_metrics: Any = None
+    screenshot_refs: Dict[str, Any] = {}
+    if existing is not None and existing.viewport_metrics:
+        raw_metrics = existing.viewport_metrics
+    if raw_metrics is None:
+        spec0 = state.repair_spec if isinstance(state.repair_spec, dict) else {}
+        _marker = spec0.get("viewport_metrics_attempt")
+        if _marker is None or int(_marker) == attempt_no:
+            for key in ("viewport_evaluations", "viewport_metrics", "verification_viewports"):
+                if spec0.get(key):
+                    raw_metrics = spec0[key]
+                    break
+        if isinstance(spec0.get("screenshot_refs"), dict):
+            screenshot_refs = dict(spec0["screenshot_refs"])
+
+    remaining: List[Anomaly] = list(state.anomalies)
+    legacy_no_defects = False
+    if raw_metrics is None and existing is not None and existing.verified_vr is not None:
+        bleed = existing.verified_bleed_px if existing.verified_bleed_px is not None else 0.0
+        raw_metrics = {
+            "mobile": {"viewport": "mobile", "v_r": existing.verified_vr,
+                       "iou": existing.verified_iou if existing.verified_iou is not None else 0.0, "delta_x": bleed},
+            "desktop": {"viewport": "desktop", "v_r": existing.verified_vr,
+                        "iou": existing.verified_iou if existing.verified_iou is not None else 0.0, "delta_x": bleed},
+        }
+    elif raw_metrics is None and existing is not None:
+        # Recorded attempt without metrics: its passed flag is honoured
+        # only as failure unless it explicitly passed (legacy contract).
         if existing.passed:
-            passed = vr_values[0] >= 0.98 and iou_values[0] == 0.0 and bleed_values[0] <= 2.0
-    elif existing is not None:
-        passed = bool(existing.passed)
-        if passed:
-            vr_values, iou_values, bleed_values = [1.0], [0.0], [0.0]
-            remaining = []
+            raw_metrics = {"mobile": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0},
+                           "desktop": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0}}
         else:
-            vr_values, iou_values, bleed_values = _anomaly_metrics(state.anomalies)
-            if not vr_values:
-                vr_values = [0.0]
-            remaining = list(state.anomalies)
-    else:
+            m = metrics_from_anomalies(state.anomalies)
+            raw_metrics = m if m else {"mobile": {"v_r": 0.0, "iou": 0.0, "delta_x": 0.0},
+                                       "desktop": {"v_r": 0.0, "iou": 0.0, "delta_x": 0.0}}
+    elif raw_metrics is None:
         before = list(state.anomalies)
         sense_fn = globals().get("sense_with_playwright_and_sam", sense_with_playwright_and_sam)
         try:
-            await _call_node(
-                sense_fn, state, sandbox_runner=sandbox_runner, sam_client=sam_client, resense=True
-            )
-            # _call_node's node transition moved us to SENSE; restore VERIFY.
+            await _call_node(sense_fn, state, sandbox_runner=sandbox_runner, sam_client=sam_client, resense=True)
             state.transition_to(FSMStep.VERIFY)
         except Exception:
             state.anomalies = before
         remaining = list(state.anomalies)
-        if remaining:
-            vr_values, iou_values, bleed_values = _anomaly_metrics(remaining)
-        else:
-            vr_values, iou_values, bleed_values = [1.0], [0.0], [0.0]
-        passed = (
-            not remaining
-            and vr_values[0] >= 0.98
-            and max(iou_values) == 0.0
-            and max(bleed_values) <= 2.0
-        ) if remaining else True
+        spec1 = state.repair_spec if isinstance(state.repair_spec, dict) else {}
+        raw_metrics = spec1.get("viewport_evaluations") or spec1.get("viewport_metrics")
+        if not raw_metrics:
+            m = metrics_from_anomalies(remaining)
+            if m:
+                raw_metrics = m
+            elif not remaining:
+                # Legacy stub sense (no geometry): no defects detected.
+                legacy_no_defects = True
+                raw_metrics = {"mobile": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0},
+                               "desktop": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0}}
+            else:
+                raw_metrics = m
 
-    score = compute_health_score(vr_values, iou_values, bleed_values)
+    result = evaluate_dual_viewport(raw_metrics)
+    viewports = result["viewports"]
+    if legacy_no_defects:
+        result = {**result, "legacy_no_defects": True}
+    passed = bool(result["passed"])
+    score = result["score"]
+    reasons: List[str] = list(result["failure_reasons"])
+    for name, v in viewports.items():
+        if v.get("screenshot_ref"):
+            screenshot_refs[name] = v["screenshot_ref"]
 
     if not is_patch_safe(state.current_patch):
         passed = False
-        error_message = "BR-4: patch contains banned CSS (!important / z-index: 9999)"
+        reasons.append("BR-4: patch contains banned CSS (!important / z-index: 9999)")
+        error_message = reasons[-1]
     elif state.target_files and not [f for f in state.target_files if not _is_protected(f)]:
         if state.repair_spec.get("patch_skipped"):
             passed = False
             error_message = str(state.repair_spec["patch_skipped"])
+            reasons.append(error_message)
 
-    # Snapshot the best-scoring safe patch across all attempts (TDS SS3).
-    if is_patch_safe(state.current_patch):
-        state.update_best(score)
+    vrs = [viewports[n]["v_r"] for n in ("mobile", "desktop") if viewports[n]["v_r"] is not None]
+    ious = [viewports[n]["iou"] for n in ("mobile", "desktop") if viewports[n]["iou"] is not None]
+    dxs = [viewports[n]["delta_x"] for n in ("mobile", "desktop") if viewports[n]["delta_x"] is not None]
+    status = "verification_passed" if passed else ("verification_invalid" if not result["valid"] else "verification_failed")
+
+    # Best = highest valid dual-viewport score (exact patch snapshot),
+    # whether or not that attempt passed; invalid attempts ineligible.
+    if is_patch_safe(state.current_patch) and score is not None:
+        state.update_best(score, attempt_number=attempt_no, viewport_metrics=viewports, screenshot_refs=screenshot_refs)
 
     if existing is not None:
         existing.patch_diff = state.current_patch
-        existing.verified_vr = vr_values[0] if vr_values else 1.0
-        existing.verified_iou = max(iou_values) if iou_values else 0.0
-        existing.verified_bleed_px = max(bleed_values) if bleed_values else 0.0
-        existing.post_score = score
+        existing.verified_vr = min(vrs) if vrs else None
+        existing.verified_iou = max(ious) if ious else None
+        existing.verified_bleed_px = max(dxs) if dxs else None
+        existing.post_score = round(score, 4) if score is not None else None
         existing.passed = passed
-        existing.error_message = error_message
+        existing.error_message = error_message or ("; ".join(reasons) if reasons else None)
+        existing.viewport_metrics = viewports
+        existing.screenshot_refs = screenshot_refs
+        existing.verification_status = status
+        existing.metrics_valid = bool(result["valid"])
+        existing.failure_reasons = reasons
         record = existing
     else:
         record = SelfHealingAttempt(
-            attempt_number=attempt_no,
-            patch_diff=state.current_patch,
-            verified_vr=vr_values[0] if vr_values else 1.0,
-            verified_iou=max(iou_values) if iou_values else 0.0,
-            verified_bleed_px=max(bleed_values) if bleed_values else 0.0,
-            post_score=score,
-            passed=passed,
-            error_message=error_message,
-        )
+            attempt_number=attempt_no, patch_diff=state.current_patch,
+            verified_vr=min(vrs) if vrs else None, verified_iou=max(ious) if ious else None,
+            verified_bleed_px=max(dxs) if dxs else None,
+            post_score=round(score, 4) if score is not None else None, passed=passed,
+            error_message=error_message or ("; ".join(reasons) if reasons else None),
+            viewport_metrics=viewports, screenshot_refs=screenshot_refs,
+            verification_status=status, metrics_valid=bool(result["valid"]), failure_reasons=reasons)
         state.attempts.append(record)
 
+    # Preserve Node2/3/4 metadata; only add Node5 keys.
+    spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
+    spec["verification_status"] = status
+    spec["viewport_metrics"] = viewports
+    spec["viewport_evaluations"] = viewports
+    spec["verification_failure_reasons"] = reasons
+    spec["viewport_metrics_attempt"] = attempt_no
+    spec["verify_viewports"] = ["375px", "1440px"]
+    if screenshot_refs:
+        spec["screenshot_refs"] = screenshot_refs
+    state.repair_spec = spec
+    state.verification_status = status
+    try:
+        state.sandbox.visual_verified = passed
+    except Exception:
+        pass
     state.strike_count = state.attempt
     if passed:
         state.anomalies = []
         state.is_resolved = True
         state.transition_to(FSMStep.VERIFY, RunStatus.RESOLVED)
     else:
-        state.anomalies = remaining
+        if not legacy_no_defects:
+            state.anomalies = remaining
         state.is_resolved = False
     return state
 
@@ -918,7 +1070,8 @@ class VisorOrchestrator:
 
     async def step_4_patch(self, state: AgentState) -> AgentState:
         fn = globals().get("patch_with_muse_code", patch_with_muse_code)
-        state = await _call_node(fn, state, code_client=self.code_client)
+        state = await _call_node(fn, state, code_client=self.code_client,
+                                 sandbox_runner=self.sandbox_runner)
         await self.emit_update(state)
         return state
 
@@ -981,8 +1134,8 @@ async def _drive_fsm(
         if use_events:
             await _broadcast(event_broadcast, "TRIAGE_COMPLETE", state)
 
-        # Nodes 3-5: DIAGNOSE -> PATCH -> VERIFY, 3-Strike Loop (BR-1)
-        while state.attempt < state.max_attempts:
+        # Nodes 3-5: DIAGNOSE -> PATCH -> VERIFY, 3-Strike Loop (BR-1, hard cap 3)
+        while state.attempt < min(state.max_attempts, 3):
             state.attempt += 1
             state.strike_count = state.attempt
             try:
@@ -1036,27 +1189,13 @@ async def _drive_fsm(
     else:
         state.transition_to(FSMStep.VERIFY, RunStatus.RESOLVED)
 
-    # Optional GitHub side-effects, only when a client was injected.
+    # GitHub publication, only when a client was injected: verified runs
+    # commit exactly the authorized verified files; 3-strike failures get
+    # a non-destructive unverified suggestion. Never raises, never forces.
     github = orchestrator.github_client
-    if github is not None:
-        try:
-            if state.is_resolved and state.best_patch:
-                await github.commit_patch(
-                    state.repo_full_name or state.repo_name,
-                    state.branch,
-                    state.target_files[0] if state.target_files else "",
-                    state.best_patch,
-                )
-            elif not state.is_resolved:
-                await github.post_pr_review(
-                    state.repo_full_name or state.repo_name,
-                    state.pr_number,
-                    state.run_id,
-                    {"status": state.status.value, "strikes": state.attempt,
-                     "best_score": state.best_score, "best_patch": state.best_patch},
-                )
-        except Exception:
-            pass
+    if github is not None and state.attempts:
+        from backend.core.github_publish import publish_run_result
+        await publish_run_result(state, github)
     return state
 
 
