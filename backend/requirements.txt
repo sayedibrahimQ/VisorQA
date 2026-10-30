@@ -21,6 +21,10 @@ Pillow>=10.0.0
 # Browser Automation & Sandbox Testing
 playwright>=1.42.0
 
+# Modal sandbox backend (only needed when SANDBOX_BACKEND=modal;
+# local backend and the whole test suite work without it/credentials)
+modal>=1.0
+
 # LLM & AI Clients
 openai>=1.14.0
 httpx>=0.27.0
