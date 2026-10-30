@@ -1193,7 +1193,7 @@ async def _drive_fsm(
     # commit exactly the authorized verified files; 3-strike failures get
     # a non-destructive unverified suggestion. Never raises, never forces.
     github = orchestrator.github_client
-    if github is not None and state.attempts:
+    if (github is not None or getattr(settings, "GITHUB_APP_ID", "")) and state.attempts:
         from backend.core.github_publish import publish_run_result
         await publish_run_result(state, github)
     return state

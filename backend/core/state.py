@@ -268,6 +268,7 @@ class AgentState(BaseModel):
     pr_number: int = 0
     branch: str = "main"
     commit_sha: str = ""
+    installation_id: Optional[int] = None
 
     # --- 3-Strike loop (Jira contract) -------------------------------
     attempt: int = Field(default=0, ge=0)

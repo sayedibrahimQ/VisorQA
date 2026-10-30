@@ -84,8 +84,20 @@ def _set(state: Any, status: str, **kw) -> None:
     state.repair_spec = spec
 
 
-async def publish_run_result(state: Any, github: Any) -> Any:
+async def publish_run_result(state: Any, github: Any = None) -> Any:
     """Publish according to verification outcome; records state, never raises."""
+    if github is None:
+        try:
+            from backend.adapters.github_app import github_app_auth
+            from backend.config import settings
+            inst_id = getattr(state, "installation_id", None) or getattr(settings, "GITHUB_INSTALLATION_ID", None)
+            if github_app_auth.is_configured() and inst_id:
+                github = await github_app_auth.get_authenticated_client(inst_id)
+            elif getattr(settings, "GITHUB_PAT", None):
+                from backend.adapters.github_client import GitHubClient
+                github = GitHubClient()
+        except Exception:
+            github = None
     if github is None:
         return state
     repo = state.repo_full_name or state.repo_name

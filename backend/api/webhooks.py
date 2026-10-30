@@ -162,6 +162,8 @@ async def handle_github_webhook(
         )
 
     delivery_id = x_github_delivery or str(uuid4())
+    installation_data = payload.get("installation") or {}
+    installation_id = installation_data.get("id")
 
     # 4. Filter events: only pull_request (opened, synchronize, reopened) and push
     if x_github_event == "pull_request":
@@ -275,6 +277,7 @@ async def handle_github_webhook(
         branch=branch,
         commit_sha=commit_sha,
         pr_url=pr_url,
+        installation_id=installation_id,
         status=RunStatus.RUNNING,
         current_step=FSMStep.SENSE,
     )
