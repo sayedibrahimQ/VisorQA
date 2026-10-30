@@ -2,13 +2,14 @@
 VisorQA Backend Configuration & Mathematical Constants
 """
 
+from typing import Any, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "backend/.env"),
         env_file_encoding="utf-8",
         extra="ignore"
     )
@@ -47,7 +48,50 @@ class Settings(BaseSettings):
     )
     GITHUB_PAT: str = Field(default="", description="GitHub Personal Access Token")
     GITHUB_WEBHOOK_SECRET: str = Field(default="", description="GitHub Webhook HMAC Secret")
-    MODAL_TOKEN: str = Field(default="", description="Modal Token for sandbox runners")
+
+    # GitHub App Integration (visorqa-bot[bot])
+    GITHUB_APP_ID: str = Field(default="", description="GitHub App ID (General -> App ID)")
+    GITHUB_INSTALLATION_ID: Optional[str] = Field(
+        default=None,
+        description="Default GitHub App Installation ID (Install App -> Gear icon -> ID in URL)",
+    )
+    GITHUB_PRIVATE_KEY_PATH: str = Field(
+        default="",
+        description="Path to GitHub App .pem private key file (e.g. backend/visorqa-bot.private-key.pem)",
+    )
+    GITHUB_PRIVATE_KEY: str = Field(
+        default="",
+        description="Inline PEM private key string (alternative to file path for cloud/Docker)",
+    )
+    GITHUB_BOT_USERNAME: str = Field(
+        default="visorqa-bot[bot]",
+        description="Expected bot username for verification and comment authorship",
+    )
+
+    @field_validator("GITHUB_INSTALLATION_ID", mode="before")
+    @classmethod
+    def _validate_installation_id(cls, v: Any) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        return str(v).strip()
+    MODAL_TOKEN: str = Field(default="", description="Legacy single Modal token (deprecated; prefer ID/SECRET)")
+    MODAL_TOKEN_ID: str = Field(default="", description="Modal API token ID (modal.com -> API Tokens)")
+    MODAL_TOKEN_SECRET: str = Field(default="", description="Modal API token secret")
+    MODAL_APP_NAME: str = Field(default="visorqa-sandbox")
+
+    # Sandbox backend selection: "local" (default, no credentials) | "modal"
+    # SANDBOX_PROVIDER is the canonical name (VISOR-ENV-001); SANDBOX_BACKEND
+    # is kept as a backward-compatible alias. Factory resolution: an explicit
+    # non-default value in either wins; both default to "local".
+    SANDBOX_BACKEND: str = Field(default="local", description="Sandbox backend: local | modal | stub")
+    SANDBOX_PROVIDER: str = Field(default="local", description="Sandbox provider: local | modal | stub")
+    TARGET_APP_PATH: str = Field(default="./demo-target-app", description="Source target app directory")
+    TARGET_APP_PORT: int = Field(default=3001, description="Preferred target app dev-server port")
+    SANDBOX_LOCAL_ROOT: str = Field(default="", description="Local sandbox root (default: /tmp/visorqa_sandboxes)")
+    SANDBOX_HMR_TIMEOUT_SECONDS: float = Field(default=15.0)
+    SANDBOX_IDLE_TIMEOUT_SECONDS: float = Field(default=1800.0)
+    SANDBOX_CPU_LIMIT: float = Field(default=0.0, description="0 = unset")
+    SANDBOX_MEMORY_LIMIT_MB: int = Field(default=0, description="0 = unset")
 
     # Server Settings
     API_HOST: str = Field(default="0.0.0.0")

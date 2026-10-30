@@ -30,10 +30,19 @@ env/
 
 # Environment Variables & Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+backend/.env*
+!backend/.env.example
 *.pem
 *.key
+*.crt
+*.cert
+*.pfx
+*.p12
+*.private-key.pem
+secrets/
+private_keys/
 
 # Database
 *.db

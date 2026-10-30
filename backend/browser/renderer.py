@@ -564,18 +564,26 @@ class PlaywrightDualViewportRenderer:
         back to the full Chromium executable, then to system Chrome
         (``channel="chrome"``) with sandbox-safe flags.
         """
+        # VISOR-ENV-002: bundled Chromium may be absent (e.g. PLAYWRIGHT_BROWSERS_PATH
+        # on /tmp) and root/container launches need --no-sandbox on every path.
+        import os
+        if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH") and Path("/tmp/ms-playwright").is_dir():
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/tmp/ms-playwright"
+        safe = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
         try:
-            return await pw.chromium.launch(headless=self.headless)
+            return await pw.chromium.launch(headless=self.headless, args=safe)
         except Exception:
             exe = Path(pw.chromium.executable_path)
             if exe.exists():
                 return await pw.chromium.launch(
-                    headless=self.headless, executable_path=str(exe),
-                    args=["--no-sandbox", "--disable-dev-shm-usage"])
+                    headless=self.headless, executable_path=str(exe), args=safe)
+            for candidate in ("/usr/bin/google-chrome", "/usr/bin/chromium",
+                              "/usr/bin/chromium-browser"):
+                if Path(candidate).exists():
+                    return await pw.chromium.launch(
+                        headless=self.headless, executable_path=candidate, args=safe)
             return await pw.chromium.launch(
-                headless=self.headless, channel="chrome",
-                args=["--no-sandbox", "--disable-dev-shm-usage",
-                      "--disable-gpu"])
+                headless=self.headless, channel="chrome", args=safe)
 
     async def _render_viewport(self, browser, url, name, width, height,
                                run_dir: Path) -> ViewportRenderResult:
