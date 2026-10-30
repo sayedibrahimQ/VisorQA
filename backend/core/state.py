@@ -221,6 +221,36 @@ class SelfHealingAttempt(BaseModel):
     passed: bool = False
     error_message: Optional[str] = None
     timestamp: datetime = Field(default_factory=_utc_now)
+    # Node 5 per-viewport evidence (mobile/desktop kept separate).
+    viewport_metrics: Dict[str, Any] = Field(default_factory=dict)
+    screenshot_refs: Dict[str, Any] = Field(default_factory=dict)
+    verification_status: str = ""  # verification_passed|verification_failed|verification_invalid
+    metrics_valid: bool = False
+    failure_reasons: List[str] = Field(default_factory=list)
+
+
+class SandboxMetadata(BaseModel):
+    """Sandbox handoff metadata (backward-compatible, all optional).
+
+    ``visual_verified`` is only ever set by Node 5 after it completes;
+    sandbox runners and Node 4 must leave it False.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    backend: str = ""
+    sandbox_id: Optional[str] = None
+    session_id: str = ""
+    branch: str = ""
+    commit_sha: str = ""
+    working_dir: str = ""
+    preview_url: Optional[str] = None
+    server_state: str = "not_started"
+    patch_count: int = 0
+    last_patch_phase: str = "none"  # patch_applied|compilation_succeeded|hmr_observed
+    last_hmr_status: str = ""
+    patch_timings: Dict[str, Any] = Field(default_factory=dict)
+    visual_verified: bool = False
 
 
 class AgentState(BaseModel):
@@ -251,6 +281,20 @@ class AgentState(BaseModel):
     best_score: float = 0.0
     best_patch: str = ""
     is_resolved: bool = False
+    # Node 5 best-attempt + publication state (only Node 5 / publisher set these).
+    best_attempt_number: int = 0
+    best_viewport_metrics: Dict[str, Any] = Field(default_factory=dict)
+    best_screenshot_refs: Dict[str, Any] = Field(default_factory=dict)
+    verification_status: str = ""  # verification_passed|verification_failed|verification_invalid
+    github_commit_pushed: bool = False
+    github_review_comment_posted: bool = False
+    github_commit_sha: Optional[str] = None
+    github_publication_status: str = "not_attempted"  # not_attempted|commit_pushed|review_comment_posted|suggestion_posted|conflict|error
+    github_error: Optional[str] = None
+
+    # --- Sandbox handoff (Node 4 -> Node 5, backward-compatible) -----
+    sandbox: SandboxMetadata = Field(default_factory=SandboxMetadata)
+    modified_files: List[str] = Field(default_factory=list)
 
     # --- Legacy / dashboard compatibility ----------------------------
     run_id: str = Field(default_factory=lambda: str(uuid4()))
@@ -320,11 +364,29 @@ class AgentState(BaseModel):
         self.strike_count = self.attempt
         self.updated_at = _utc_now()
 
-    def update_best(self, score: float) -> bool:
-        """Snapshot ``current_patch`` when ``score`` beats ``best_score``."""
-        if score > self.best_score:
-            self.best_score = round(float(score), 4)
-            self.best_patch = self.current_patch
-            self.updated_at = _utc_now()
-            return True
-        return False
+    def update_best(self, score: float, *, attempt_number: Optional[int] = None,
+                    viewport_metrics: Optional[Dict[str, Any]] = None,
+                    screenshot_refs: Optional[Dict[str, Any]] = None) -> bool:
+        """Snapshot exact ``current_patch`` when a valid score beats the best.
+
+        First valid attempt always becomes best (even if score <= 0);
+        ties keep the earlier attempt. Non-finite scores never update.
+        """
+        import math
+        try:
+            value = float(score)
+        except (TypeError, ValueError):
+            return False
+        if not math.isfinite(value):
+            return False
+        if self.best_attempt_number and value <= self.best_score:
+            return False
+        self.best_score = round(value, 4)
+        self.best_patch = self.current_patch
+        self.best_attempt_number = int(attempt_number or self.attempt or 0)
+        if viewport_metrics is not None:
+            self.best_viewport_metrics = dict(viewport_metrics)
+        if screenshot_refs is not None:
+            self.best_screenshot_refs = dict(screenshot_refs)
+        self.updated_at = _utc_now()
+        return True
