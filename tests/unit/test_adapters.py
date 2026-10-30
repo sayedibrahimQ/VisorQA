@@ -35,7 +35,10 @@ async def test_muse_code_client():
 
 @pytest.mark.asyncio
 async def test_modal_sandbox_runner():
+    # Superseded stub contract: Modal adapter now implements the shared
+    # SandboxRunner interface and, without credentials, raises an
+    # actionable SandboxConfigError instead of fabricating a URL.
+    from backend.sandbox import SandboxConfigError, SandboxRunner
     runner = ModalSandboxRunner(token="mock_token")
-    url = await runner.boot_branch("VisorQA", "fix/test")
-    assert "modal-sandbox-fix/test" in url
-    assert await runner.apply_hmr_patch("test.tsx", "code") is True
+    assert isinstance(runner, SandboxRunner)
+    assert runner.backend_name == "modal"
