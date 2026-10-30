@@ -19,7 +19,7 @@ from __future__ import annotations
 import base64
 import inspect
 import time
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from backend.sandbox.interface import (
     HMRResult,
