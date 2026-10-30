@@ -2,7 +2,8 @@
 VisorQA Infrastructure & Adapters Layer
 """
 
-from .sandbox_runner import SandboxRunnerStrategy, ModalSandboxRunner, LocalPlaywrightRunner
+from .sandbox_runner import (SandboxRunnerStrategy, ModalSandboxRunner,
+    LocalPlaywrightRunner, LocalSandboxRunner, create_sandbox_runner)
 from .muse_clients import SAM31Client, MuseSparkClient, MuseWonderClient, MuseCodeClient
 from .spark_client import MuseSparkTriageClient
 from .wonder_client import MuseWonderDiagnosisClient
@@ -19,6 +20,8 @@ __all__ = [
     "SandboxRunnerStrategy",
     "ModalSandboxRunner",
     "LocalPlaywrightRunner",
+    "LocalSandboxRunner",
+    "create_sandbox_runner",
     "SAM31Client",
     "PointGuidedSAM31Client",
     "MuseSparkTriageClient",
