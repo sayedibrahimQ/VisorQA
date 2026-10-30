@@ -5,6 +5,18 @@
 :root {
   --background: #0a0a0c;
   --foreground: #fafafa;
+
+  /* Photonic Laser & Carbon Palette Tokens */
+  --color-canvas: 10 10 12;
+  --color-surface-subtle: 11 12 16;
+  --color-surface-base: 17 17 21;
+  --color-surface-elevated: 24 24 30;
+  --color-surface-overlay: 30 32 44;
+
+  --color-laser-cyan: 0 242 254;
+  --color-defect-crimson: 255 46 85;
+  --color-triage-amber: 245 158 11;
+  --color-verified-emerald: 16 185 129;
 }
 
 body {
@@ -31,4 +43,74 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #33333f;
+}
+
+/* Photonic Laser scanline animation */
+@keyframes visor-laser-sweep {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.95;
+  }
+  85% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(550%);
+    opacity: 0;
+  }
+}
+
+@keyframes visor-radar-ping {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes ambient-pulse {
+  0%, 100% {
+    opacity: 0.06;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.14;
+    transform: scale(1.04);
+  }
+}
+
+.animate-laser-sweep {
+  animation: visor-laser-sweep 3.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.animate-radar-ping {
+  animation: visor-radar-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.animate-ambient-pulse {
+  animation: ambient-pulse 8s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* Optical blueprint grid background */
+.optical-grid {
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Zero-CLS GPU containment utility */
+.zero-cls-container {
+  contain: paint layout;
+  will-change: transform;
+  transform: translateZ(0);
 }
