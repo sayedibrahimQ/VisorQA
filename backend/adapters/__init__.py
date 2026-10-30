@@ -15,6 +15,7 @@ from .sam31 import (
     SegmentationBatchResult,
 )
 from .github_client import GitHubClient
+from .github_app import GitHubAppAuth, github_app_auth
 
 __all__ = [
     "SandboxRunnerStrategy",
@@ -34,4 +35,6 @@ __all__ = [
     "MuseWonderClient",
     "MuseCodeClient",
     "GitHubClient",
+    "GitHubAppAuth",
+    "github_app_auth",
 ]
