@@ -6,7 +6,9 @@ import { LiveTrace } from "@/components/LiveTrace";
 import { PRRunSidebar } from "@/components/mission-control/PRRunSidebar";
 import { FSMOrchestratorBar } from "@/components/mission-control/FSMOrchestratorBar";
 import { ThreeStrikeLoop } from "@/components/mission-control/ThreeStrikeLoop";
+import { DualViewportStage } from "@/components/mission-control/DualViewportStage";
 import { getAttemptState } from "@/lib/fsmSelectors";
+import { adaptRunToStage } from "@/lib/viewportArtifacts";
 
 /**
  * Mission Control workspace. The active run is focused automatically when a
@@ -26,6 +28,8 @@ export default function MissionControlPage() {
     focusLatencyMs,
     selectRun,
   } = useMissionControlStream();
+
+  const stage = adaptRunToStage(activeRun);
 
   return (
     <main className="min-h-screen bg-canvas text-text-primary">
@@ -74,6 +78,16 @@ export default function MissionControlPage() {
                 </div>
                 <div className="mt-3">
                   <FSMOrchestratorBar run={activeRun} />
+                </div>
+                <div className="mt-4">
+                  <DualViewportStage
+                    runId={stage.runId}
+                    runLabel={stage.runLabel}
+                    mobile={stage.mobile}
+                    desktop={stage.desktop}
+                    hmr={stage.hmr}
+                    untaggedCount={stage.untaggedCount}
+                  />
                 </div>
                 <div className="mt-4">
                   <LiveTrace
