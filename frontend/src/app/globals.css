@@ -114,3 +114,74 @@ body {
   will-change: transform;
   transform: translateZ(0);
 }
+
+/* Restrained AI Harmony glow for the active FSM node (single node only). */
+.harmony-glow {
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.25),
+    0 0 14px -4px rgba(56, 189, 248, 0.35);
+}
+
+.harmony-beam {
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(56, 189, 248, 0.08) 45%,
+    rgba(129, 140, 248, 0.12) 50%,
+    rgba(56, 189, 248, 0.08) 55%,
+    transparent 80%
+  );
+  background-size: 220% 100%;
+  animation: border-glow-beam 4s linear infinite;
+  will-change: background-position;
+}
+
+@keyframes border-glow-beam {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
+/* Repair-loop arc: orbits the active strike segment when an attempt starts. */
+.strike-loop-arc {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(245, 158, 11, 0.9) 70deg,
+    transparent 140deg
+  );
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2px),
+    #000 calc(100% - 1px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2px),
+    #000 calc(100% - 1px)
+  );
+  animation: strike-arc-spin 1.6s linear infinite;
+  will-change: transform;
+}
+
+@keyframes strike-arc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harmony-beam,
+  .strike-loop-arc,
+  .animate-laser-sweep,
+  .animate-radar-ping,
+  .animate-ambient-pulse {
+    animation: none;
+  }
+  .harmony-glow {
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4);
+  }
+}

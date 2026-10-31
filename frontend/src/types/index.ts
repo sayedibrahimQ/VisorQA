@@ -51,4 +51,12 @@ export interface PRRun {
   attempts?: SelfHealingAttempt[];
   created_at?: string;
   updated_at?: string;
+  /** PR title when the backend provides one. Absent in GET /api/runs + WS state today. */
+  pr_title?: string;
+  /**
+   * Real per-node execution latency in ms, keyed by FSM step.
+   * Only set when the backend reports measured durations. Never synthesized
+   * client-side; missing entries render a neutral placeholder.
+   */
+  step_latency_ms?: Partial<Record<FSMStep, number>>;
 }
