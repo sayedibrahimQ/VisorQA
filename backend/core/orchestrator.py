@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import fnmatch
 import inspect
+import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -58,6 +59,8 @@ __all__ = [
     "PROTECTED_GLOBS",
     "BANNED_PATCH_PATTERNS",
 ]
+
+logger = logging.getLogger("visorqa.orchestrator")
 
 # BR-2: shared design-system components are never patched directly.
 PROTECTED_GLOBS: List[str] = ["src/components/ui/*", "*/components/ui/*"]
@@ -544,6 +547,7 @@ async def diagnose_muse_wonder(
     from backend.core.diagnose import (
         DIAGNOSIS_FIELDS,
         PROTECTED_TRIAGE_KEYS,
+        authorized_targets,
         build_diagnosis_context,
         validate_repair_spec,
     )
@@ -807,11 +811,11 @@ async def patch_muse_code_and_apply(
         logger.warning(
             f"Muse Code patch proposal unavailable ({exc}); synthesizing context-verified diff for {target}")
         src_lines = snapshot.text.split("\n")
-        ctx_lines = [l for l in src_lines[:10] if l.strip()][:2]
+        ctx_lines = [line for line in src_lines[:10] if line.strip()][:2]
         if not ctx_lines:
             ctx_lines = src_lines[:1] or [""]
         count = len(ctx_lines)
-        diff_body = "".join(f" {l}\n" for l in ctx_lines) + "+// VisorQA: layout container adjustment for mobile viewport\n"
+        diff_body = "".join(f" {line}\n" for line in ctx_lines) + "+// VisorQA: layout container adjustment for mobile viewport\n"
         fallback_diff = f"--- a/{target}\n+++ b/{target}\n@@ -1,{count} +1,{count + 1} @@\n{diff_body}"
         try:
             normalized = normalize_diff(fallback_diff)
