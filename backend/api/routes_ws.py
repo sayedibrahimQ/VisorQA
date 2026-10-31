@@ -14,7 +14,7 @@ import time
 from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from backend.core.state import AgentState
@@ -122,6 +122,9 @@ class ConnectionManager:
         self.total_broadcasts = 0
         self.last_overhead_ms = 0.0
         self.max_overhead_ms = 0.0
+        # Monotonically increasing broadcast sequence (Workstream 1) so the
+        # frontend can order/merge live frames against REST hydration.
+        self._sequence = 0
 
     @property
     def client_count(self) -> int:
@@ -232,10 +235,14 @@ class ConnectionManager:
         else:
             state_dict = {"data": str(state)}
 
+        self._sequence += 1
+        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         return {
             "event": event_type,
             "type": event_type,
-            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "timestamp": ts,
+            "updated_at": ts,
+            "sequence": self._sequence,
             "run_id": run_id,
             "state": state_dict,
         }
@@ -302,7 +309,7 @@ async def ws_broadcast(event_type: str, state: Any) -> float:
 
 @router.get("/runs")
 async def list_runs() -> List[Dict[str, Any]]:
-    """Lists recent PR QA Runs for the Mission Control dashboard from DB, with fallback to demo run"""
+    """Lists recent PR QA Runs from DB + artifact registry, demo fallback last."""
     results: List[Dict[str, Any]] = []
     try:
         from backend.db.repository import AsyncSessionLocal, RunRepository
@@ -320,9 +327,33 @@ async def list_runs() -> List[Dict[str, Any]]:
                     "current_step": "1.SENSE",
                     "strikes": r.attempt,
                     "anomalies_count": len(r.anomalies) if r.anomalies else 0,
+                    "updated_at": r.updated_at.isoformat() if getattr(r, "updated_at", None) else None,
                 })
     except Exception as e:
         logger.warning(f"Could not load runs from database: {e}")
+
+    # Artifact-registry runs (seeded + live-persisted) merge without dupes.
+    try:
+        from backend.core.artifacts import ArtifactStore
+        known = {r["id"] for r in results}
+        for rec in ArtifactStore().list_run_records():
+            if rec.get("id") in known:
+                continue
+            results.append({
+                "id": rec.get("id"),
+                "pr_number": rec.get("pr_number", 0),
+                "repo_name": rec.get("repo_name", ""),
+                "branch": rec.get("branch", ""),
+                "commit_sha": rec.get("commit_sha", ""),
+                "status": rec.get("status", "PENDING"),
+                "current_step": rec.get("current_step", "1.SENSE"),
+                "strikes": max([int(a.get("attempt_number", 0) or 0)
+                                for a in rec.get("attempts_raw", [])] or [0]),
+                "anomalies_count": len(rec.get("anomalies", []) or []),
+                "updated_at": rec.get("updated_at"),
+            })
+    except Exception as e:
+        logger.warning(f"Could not load artifact registry runs: {e}")
 
     # Ensure demo runs are also available for inspection if list is empty or for demo-42
     if not any(r["id"] == "run-demo-42" for r in results):
@@ -340,72 +371,234 @@ async def list_runs() -> List[Dict[str, Any]]:
     return results
 
 
+class CreateRunRequest(BaseModel):
+    pr_number: int = 0
+    repo_name: str = ""
+    repo_full_name: str = ""
+    branch: str = "main"
+    commit_sha: str = ""
+    # Workstream 2 (A3): optionally dispatch the FSM in the background so
+    # the run streams live WS updates and persists final artifacts.
+    dispatch: bool = False
+    anomalies: List[Dict[str, Any]] = []
+
+
+@router.post("/runs", status_code=202)
+async def create_run(payload: CreateRunRequest,
+                     background_tasks: BackgroundTasks) -> Dict[str, Any]:
+    """Register a queued PR run; optionally dispatch the live FSM run.
+
+    Persists the run shell to the artifact registry (and DB when reachable)
+    so live runs appear in Mission Control identically to seeded ones. With
+    ``dispatch=true`` the deterministic pipeline runs in the background
+    (same lifecycle as the GitHub webhook path) and streams over the
+    existing WebSocket protocol.
+    """
+    from uuid import uuid4 as _uuid4
+
+    run_id = f"run-{_uuid4().hex[:12]}"
+    record: Dict[str, Any] = {
+        "id": run_id,
+        "pr_number": payload.pr_number,
+        "repo_name": payload.repo_full_name or payload.repo_name,
+        "repo_full_name": payload.repo_full_name or payload.repo_name,
+        "branch": payload.branch,
+        "commit_sha": payload.commit_sha,
+        "status": "QUEUED",
+        "current_step": "1.SENSE",
+        "max_attempts": 3,
+        "target_files": [],
+        "anomalies": [],
+        "attempts_raw": [],
+        "artifacts": [],
+    }
+    try:
+        from backend.core.artifacts import ArtifactStore
+        ArtifactStore().save_run_record(record)
+    except Exception as e:
+        logger.warning(f"Could not register run in artifact registry: {e}")
+    try:
+        from backend.db.repository import AsyncSessionLocal, RunRepository
+        async with AsyncSessionLocal() as session:
+            repo = RunRepository(session)
+            created = await repo.create_run(
+                pr_number=payload.pr_number,
+                repo_name=record["repo_name"],
+                branch=payload.branch,
+                commit_sha=payload.commit_sha or "HEAD",
+            )
+            run_id = created.id
+            record["id"] = run_id
+            from backend.core.artifacts import ArtifactStore
+            ArtifactStore().save_run_record(record)
+    except Exception as e:
+        logger.warning(f"Could not register run in database: {e}")
+
+    dispatched = False
+    if payload.dispatch:
+        try:
+            from backend.api.webhooks import _run_agent_lifecycle
+            from backend.core.state import AgentState, Anomaly
+
+            seeded_anomalies = []
+            for raw in payload.anomalies or []:
+                try:
+                    seeded_anomalies.append(Anomaly(**raw))
+                except Exception:
+                    continue
+            agent_state = AgentState(
+                run_id=run_id,
+                repo_full_name=record["repo_name"],
+                repo_name=record["repo_name"],
+                pr_number=payload.pr_number,
+                branch=payload.branch,
+                commit_sha=payload.commit_sha or "",
+                anomalies=seeded_anomalies,
+            )
+            background_tasks.add_task(_run_agent_lifecycle, agent_state)
+            dispatched = True
+        except Exception as e:
+            logger.warning(f"Could not dispatch run {run_id}: {e}")
+    return {"id": run_id, "status": "QUEUED", "pr_number": payload.pr_number,
+            "repo_name": record["repo_name"], "dispatched": dispatched}
+
+
+@router.get("/runs/{run_id}/artifacts")
+async def get_run_artifacts(run_id: str) -> Dict[str, Any]:
+    """Artifact index for one run (URLs are served under /api/artifacts)."""
+    from backend.core.artifacts import ArtifactStore
+
+    record = ArtifactStore().get_run_record(run_id)
+    if record is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"no artifacts registered for run {run_id}")
+    return {
+        "run_id": run_id,
+        "artifacts": record.get("artifacts", []),
+        "attempts": [
+            {
+                "attempt_number": t.get("attempt_number"),
+                "kind": t.get("kind"),
+                "screenshots": t.get("screenshots"),
+                "sam_masks": t.get("sam_masks"),
+            }
+            for t in record.get("attempts", [])
+        ],
+    }
+
+
 @router.get("/runs/{run_id}")
 async def get_run_details(run_id: str) -> Dict[str, Any]:
-    """Retrieves deep-link run details for Inspector permalink view from DB or demo fallback"""
+    """Rich run details: baseline + ordered strike telemetry (Workstream 1).
+
+    Sources, in order: Postgres (when reachable), the artifact registry
+    (seeded + live-persisted runs), then the deterministic demo fallback.
+    """
+    from backend.core.artifacts import ArtifactStore, build_run_payload
+
     try:
         from backend.db.repository import AsyncSessionLocal, RunRepository
         async with AsyncSessionLocal() as session:
             repo = RunRepository(session)
             run = await repo.get_run_by_id(run_id)
             if run:
-                return {
+                run_dict: Dict[str, Any] = {
                     "id": run.id,
                     "pr_number": run.pr_number,
                     "repo_name": run.repo_full_name,
+                    "repo_full_name": run.repo_full_name,
                     "branch": run.branch,
                     "commit_sha": run.commit_sha,
                     "status": run.status,
                     "current_step": "1.SENSE",
-                    "strikes": run.attempt,
-                    "anomalies": [
-                        {
-                            "id": a.id,
-                            "element_id": a.element_id,
-                            "defect_type": a.defect_type,
-                            "visibility_ratio": a.visibility_ratio,
-                            "iou_score": a.iou_score,
-                            "status": a.status,
-                        }
-                        for a in (run.anomalies or [])
-                    ],
-                    "attempts": [
-                        {
-                            "id": att.id,
-                            "attempt_number": att.attempt_number,
-                            "repair_spec": att.repair_spec,
-                            "unified_diff": att.unified_diff,
-                            "passed": att.passed,
-                        }
-                        for att in (run.attempts or [])
-                    ],
+                    "max_attempts": run.max_attempts,
+                    "target_files": run.target_files or [],
+                    "is_resolved": run.is_resolved,
+                    "best_score": run.best_score,
+                    "created_at": run.created_at.isoformat() if run.created_at else None,
+                    "updated_at": run.updated_at.isoformat() if run.updated_at else None,
                 }
+                anomaly_dicts = [
+                    {
+                        "id": a.id,
+                        "element_id": a.visor_el_id,
+                        "defect_type": a.defect_type,
+                        "visibility_ratio": a.v_r,
+                        "iou_score": a.iou,
+                        "bleed_px": a.bleed_px,
+                        "bounding_box": a.b_dom_box or {},
+                        "secondary_el_id": a.secondary_el_id,
+                        "viewport": a.viewport,
+                        "attempt_num": a.attempt_num,
+                        "mask_url": a.mask_url,
+                        "status": "RESOLVED" if a.is_resolved else "DETECTED",
+                    }
+                    for a in (run.anomalies or [])
+                ]
+                attempt_dicts = []
+                for att in (run.attempts or []):
+                    attempt_dicts.append({
+                        "id": att.id,
+                        "attempt_number": att.attempt_number,
+                        "repair_spec": att.repair_spec or {},
+                        "unified_diff": att.unified_diff,
+                        "passed": att.passed,
+                        "telemetry": getattr(att, "telemetry", {}) or {},
+                        # Legacy dual-viewport columns (worst-case aggregates).
+                        "viewport_metrics": {
+                            "mobile": {"v_r": att.mobile_v_r_min,
+                                       "iou": att.verified_iou,
+                                       "delta_x": att.verified_bleed_px},
+                            "desktop": {"v_r": att.desktop_v_r_min,
+                                        "iou": att.verified_iou,
+                                        "delta_x": att.verified_bleed_px},
+                        },
+                    })
+                store = ArtifactStore()
+                record = store.get_run_record(run_id)
+                entries = record.get("artifacts", []) if record else []
+                return build_run_payload(run_dict, anomaly_dicts, attempt_dicts, entries)
     except Exception as e:
         logger.warning(f"Could not load run {run_id} from database: {e}")
 
-    # Fallback to demo run details
-    return {
+    store = ArtifactStore()
+    record = store.get_run_record(run_id)
+    if record is not None:
+        return build_run_payload(
+            record,
+            record.get("anomalies", []) or [],
+            record.get("attempts_raw", []) or [],
+            record.get("artifacts", []) or [],
+        )
+
+    # Fallback to demo run details (same rich shape, no artifacts on disk)
+    demo_run: Dict[str, Any] = {
         "id": run_id,
         "pr_number": 42,
         "repo_name": "sayedibrahimQ/VisorQA",
+        "repo_full_name": "sayedibrahimQ/VisorQA",
         "branch": "fix/checkout-banner",
         "commit_sha": "a1b2c3d",
         "status": "RUNNING",
         "current_step": "1.SENSE",
-        "strikes": 0,
-        "anomalies": [
-            {
-                "id": "anom-01",
-                "element_id": "visor-el-04",
-                "defect_type": "OCCLUSION",
-                "visibility_ratio": 0.62,
-                "iou_score": 0.0,
-                "bounding_box": {"x": 12, "y": 80, "width": 350, "height": 60},
-                "status": "DETECTED",
-            }
-        ],
-        "attempts": [],
+        "max_attempts": 3,
+        "target_files": [],
     }
+    demo_anomalies = [
+        {
+            "id": "anom-01",
+            "element_id": "visor-el-04",
+            "defect_type": "OCCLUSION",
+            "visibility_ratio": 0.62,
+            "iou_score": 0.0,
+            "bleed_px": 0.0,
+            "bounding_box": {"x": 12, "y": 80, "width": 350, "height": 60},
+            "viewport": "375px",
+            "attempt_num": 0,
+            "status": "DETECTED",
+        }
+    ]
+    return build_run_payload(demo_run, demo_anomalies, [], [])
 
 
 # -----------------------------------------------------------------------------

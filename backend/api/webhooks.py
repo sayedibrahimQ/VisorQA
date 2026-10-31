@@ -77,6 +77,13 @@ async def _run_agent_lifecycle(state: AgentState) -> None:
         logger.info(f"Dispatching autonomous QA agent for run {state.run_id} ({state.repo_full_name} PR #{state.pr_number})")
         final_state = await run_visor_agent(state, ws_broadcast=ws_broadcast)
 
+        # Workstream 1: persist per-attempt telemetry + artifacts (non-fatal).
+        try:
+            from backend.core.artifacts import persist_run_telemetry
+            persist_run_telemetry(final_state)
+        except Exception as art_err:
+            logger.error(f"Failed to persist run artifacts for run {state.run_id}: {art_err}")
+
         # Sync final FSM resolution state to PostgreSQL using a fresh session
         try:
             async with AsyncSessionLocal() as session:
@@ -94,6 +101,11 @@ async def _run_agent_lifecycle(state: AgentState) -> None:
             state.status = RunStatus.FAILED
             from backend.api.routes_ws import ws_broadcast
 
+            try:
+                from backend.core.artifacts import persist_run_telemetry
+                persist_run_telemetry(state)
+            except Exception as art_err:
+                logger.error(f"Failed to persist run artifacts for run {state.run_id}: {art_err}")
             await ws_broadcast("RUN_HALTED", state)
             async with AsyncSessionLocal() as session:
                 repo = RunRepository(session)
