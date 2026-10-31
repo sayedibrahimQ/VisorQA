@@ -1,7 +1,7 @@
 import React from "react";
 
 export const REPO_URL = "https://github.com/sayedibrahimQ/VisorQA";
-export const MISSION_CONTROL_URL = "/runs/run-demo-42";
+export const MISSION_CONTROL_URL = "/mission-control";
 export const CLI_CMD = "npx visorqa init";
 export const FOCUS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas";

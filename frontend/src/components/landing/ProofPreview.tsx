@@ -51,7 +51,7 @@ function CheckoutMock({
         <span className="h-2 w-2 rounded-full bg-amber-500/70" />
         <span className="h-2 w-2 rounded-full bg-emerald-500/70" />
         <span className="ml-2 h-4 flex-1 truncate rounded bg-canvas px-2 font-mono text-[9px] leading-4 text-text-muted">
-          https://storefront.dev/checkout (PR #42)
+          Live repository preview (example layout)
         </span>
         <span className="font-mono text-[9px] text-text-muted">
           {wide ? "1440x900" : "375x812"}
@@ -99,7 +99,7 @@ function CheckoutMock({
               </span>
             </div>
             <p className="mt-0.5 text-xs font-medium text-text-primary">
-              Flash Deal — 20% off all checkout items with code VISORQA
+              Promotional banner (example layout)
             </p>
           </div>
 
@@ -114,7 +114,7 @@ function CheckoutMock({
               <span className="font-mono text-[10px] text-text-muted">
                 visor-el-09 · ORDER SUMMARY
               </span>
-              <span className="font-mono text-[10px] text-emerald-400">$189.00</span>
+              <span className="font-mono text-[10px] text-emerald-400">$ —</span>
             </div>
 
             <div className="mt-3 space-y-2">
@@ -123,7 +123,7 @@ function CheckoutMock({
                 <span className="font-mono text-text-primary">$150.00</span>
               </div>
               <div className="flex items-center justify-between text-xs text-text-secondary">
-                <span>Modal Sandboxed Runners (x2)</span>
+                <span>Sandboxed Runners (x2)</span>
                 <span className="font-mono text-text-primary">$39.00</span>
               </div>
               <div className="h-px bg-border-subtle my-1" />
@@ -133,7 +133,7 @@ function CheckoutMock({
 
             {/* Pay Now Button */}
             <div className="mt-4 rounded bg-cyan-400 px-3 py-2.5 text-center font-mono text-xs font-semibold text-canvas shadow-sm">
-              visor-el-12 · CONFIRM & PAY $189.00
+              visor-el-12 · CONFIRM & PAY
             </div>
           </div>
         </div>

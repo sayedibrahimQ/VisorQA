@@ -105,7 +105,7 @@ export function MaskSlider({
 
           {/* Simulated App Header */}
           <div className="h-7 border-b border-border-subtle bg-elevated px-3 flex items-center justify-between text-[10px] font-mono text-text-muted">
-            <span className="truncate">storefront.dev/checkout</span>
+            <span className="truncate">app preview · checkout (example)</span>
             <span>{isDesktop ? "1440x900" : "375x812"}</span>
           </div>
 
@@ -118,7 +118,7 @@ export function MaskSlider({
                 <span className="text-text-muted">position: fixed</span>
               </div>
               <p className="mt-0.5 text-[11px] text-text-primary truncate">
-                Special Launch Deal · 20% off with VISORQA
+                Promotional banner (example layout)
               </p>
             </div>
 
@@ -127,7 +127,7 @@ export function MaskSlider({
               <div className="space-y-1.5 text-[11px] text-text-secondary">
                 <div className="flex justify-between">
                   <span>Order Items (2)</span>
-                  <span className="text-text-primary">$189.00</span>
+                  <span className="text-text-primary">$ —</span>
                 </div>
                 <div className="flex justify-between text-text-muted text-[10px]">
                   <span>Autonomous Agent Runner</span>
@@ -137,7 +137,7 @@ export function MaskSlider({
 
               {/* Confirm Button */}
               <div className="mt-3 rounded bg-cyan-500/20 border border-cyan-400/40 p-2 text-center text-cyan-300 font-semibold text-[11px]">
-                visor-el-09 · CONFIRM & PAY $189.00
+                visor-el-09 · CONFIRM & PAY
               </div>
             </div>
 
