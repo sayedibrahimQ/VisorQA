@@ -7,8 +7,12 @@ import { PRRunSidebar } from "@/components/mission-control/PRRunSidebar";
 import { FSMOrchestratorBar } from "@/components/mission-control/FSMOrchestratorBar";
 import { ThreeStrikeLoop } from "@/components/mission-control/ThreeStrikeLoop";
 import { DualViewportStage } from "@/components/mission-control/DualViewportStage";
-import { getAttemptState } from "@/lib/fsmSelectors";
+import { MathTrapScorecard } from "@/components/mission-control/MathTrapScorecard";
+import { LCATriageTree } from "@/components/mission-control/LCATriageTree";
+import { ArchitectCoderInspector } from "@/components/mission-control/ArchitectCoderInspector";
+import { getAttemptState, isHistoricalRun } from "@/lib/fsmSelectors";
 import { adaptRunToStage } from "@/lib/viewportArtifacts";
+import { getInspector, getScorecard, getTriage } from "@/lib/telemetryDrawer";
 
 /**
  * Mission Control workspace. The active run is focused automatically when a
@@ -30,6 +34,10 @@ export default function MissionControlPage() {
   } = useMissionControlStream();
 
   const stage = adaptRunToStage(activeRun);
+  const scorecard = getScorecard(activeRun);
+  const triage = getTriage(activeRun);
+  const inspector = getInspector(activeRun);
+  const runActive = activeRun !== null && !isHistoricalRun(activeRun);
 
   return (
     <main className="min-h-screen bg-canvas text-text-primary">
@@ -55,7 +63,7 @@ export default function MissionControlPage() {
           </div>
         </div>
 
-        <div className="mt-5 grid min-w-0 gap-4 md:grid-cols-[240px_minmax(0,1fr)] lg:grid-cols-[292px_minmax(0,1fr)]">
+        <div className="mt-5 grid min-w-0 gap-4 md:grid-cols-[240px_minmax(0,1fr)] lg:grid-cols-[292px_minmax(0,1fr)] xl:grid-cols-[292px_minmax(0,1fr)_380px]">
           <PRRunSidebar
             runs={runs}
             activeRunId={activeRunId}
@@ -139,6 +147,25 @@ export default function MissionControlPage() {
               </div>
             )}
           </section>
+
+          <aside
+            aria-label="Telemetry inspector drawer"
+            data-testid="telemetry-drawer"
+            data-width="380px"
+            className="min-w-0"
+          >
+            <div className="space-y-5 rounded-md border border-border-subtle bg-surface-subtle p-3">
+              <MathTrapScorecard
+                current={scorecard.current}
+                best={scorecard.best}
+                runActive={runActive}
+              />
+              <div className="border-t border-border-subtle" />
+              <LCATriageTree triage={triage} />
+              <div className="border-t border-border-subtle" />
+              <ArchitectCoderInspector data={inspector} runId={activeRunId} />
+            </div>
+          </aside>
         </div>
       </div>
     </main>
