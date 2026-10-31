@@ -4,7 +4,7 @@
 
 VisorQA is a closed-loop autonomous agent that detects pixel-level UI regressions invisible to conventional DOM-based test suites (Playwright assertions, Cypress snapshots, Percy visual diffing), mathematically diagnoses their root cause, and commits verified CSS/React fixes to the originating pull request -- all without human intervention.
 
-Built for the **Meta Global AI Developer Hackathon** using four Meta AI foundation models: **SAM 3.1**, **Muse Spark**, **Muse Wonder**, and **Muse Code**.
+Built for the **Meta Global AI Developer Hackathon** using three Meta AI foundation models: **SAM 3.1**, **Muse Spark**, and **Muse Wonder**.
 
 ---
 
