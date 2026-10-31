@@ -11,6 +11,7 @@ import {
   __resetMissionControlHubsForTests,
   useMissionControlStream,
 } from "@/hooks/useMissionControlStream";
+import { AuthProvider } from "@/context/AuthContext";
 import MissionControlPage from "@/app/mission-control/page";
 import {
   MockWebSocket,
@@ -230,8 +231,15 @@ describe("SCRUM-28 real-time integration", () => {
   });
 
   it("page integration uses a single shared socket for sidebar + stepper", async () => {
-    fetchImpl = async () => [restRow("run-page")];
-    render(<MissionControlPage />);
+    fetchImpl = async (url: string) =>
+      url.includes("/api/auth/me")
+        ? { login: "tester", name: "Tester", avatar_url: "", html_url: "", auth_mode: "pat" }
+        : [restRow("run-page")];
+    render(
+      <AuthProvider>
+        <MissionControlPage />
+      </AuthProvider>,
+    );
     await waitForOpenSockets(1);
     await waitFor(() => expect(screen.getByTestId("run-item-run-page")).toBeTruthy());
     expect(screen.getByTestId("fsm-orchestrator-bar")).toBeTruthy();
