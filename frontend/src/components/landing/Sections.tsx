@@ -444,7 +444,7 @@ const TRACE_EVENTS = [
   {
     timestamp: "00:09.1",
     step: "VERIFY",
-    message: "Re-segmented both viewports: Vr = 1.00, IoU = 0.00. Fix committed to PR #42.",
+    message: "Re-segmented both viewports. Fix committed to the PR branch.",
   },
 ];
 
@@ -573,7 +573,7 @@ export function ArchitectureBento() {
       icon: Cpu,
     },
     {
-      title: "Modal Sandboxes & 0.3s HMR",
+      title: "Sandboxed Runners & Fast HMR",
       kicker: "PILLAR 04 · EXECUTION ENVIRONMENT",
       detail:
         "PR branches boot in isolated Modal cloud containers. Verified patches are injected directly into running Next.js processes via Hot Module Replacement in 0.3s, avoiding 15-second server reboot delays.",
