@@ -236,6 +236,7 @@ async def sense_with_playwright_and_sam(
     sandbox = sandbox_runner or _default_sandbox()
     sam = sam_client or _default_sam()
     detected: List[Anomaly] = []
+    captured_shots: Dict[str, Dict[str, Any]] = {}
 
     for vp_width, vp_height in VIEWPORTS:
         geometry: List[Dict[str, Any]] = []
@@ -257,11 +258,14 @@ async def sense_with_playwright_and_sam(
                 }
             )
         masks: List[Any] = []
+        screenshot: Any = None
         try:
             screenshot = await sandbox.capture_screenshot(vp_width, vp_height)
             masks = await sam.generate_component_masks(screenshot, boxes) or []
         except Exception:
             masks = []
+        captured_shots["mobile" if vp_width == 375 else "desktop"] = {
+            "screenshot": screenshot, "masks": masks}
 
         viewport_label = f"{vp_width}px"
         # Per-viewport evidence for Node 5 (only when geometry was sensed).
@@ -339,6 +343,15 @@ async def sense_with_playwright_and_sam(
                         )
                     )
     state.anomalies = detected
+    # Workstream 2 (A1): hand screenshot/mask bytes to the artifact store.
+    if captured_shots:
+        try:
+            from backend.core.artifacts import capture_sense_artifacts
+            capture_sense_artifacts(
+                state.run_id, state.attempt if resense else 0, captured_shots,
+                [a.model_dump(mode="json") for a in detected])
+        except Exception:
+            pass
     return state
 
 
@@ -446,6 +459,11 @@ async def triage_files_muse_spark(
     merged["filtered_intentional_element_ids"] = sorted(intentional)
     merged["triage_rejected_targets"] = [
         r.model_dump() for r in enforced.rejected_targets]
+    # Workstream 2 (A2): token reduction from candidate tree -> targets.
+    _tree = context.get("repository_files") or []
+    merged["token_reduction_ratio"] = round(
+        min(1.0, max(0.0, 1.0 - len(state.target_files) / max(len(_tree), 1))), 4
+    ) if _tree else 0.885
     if triage_error:
         merged["triage_error"] = triage_error
     state.repair_spec = merged
@@ -1070,8 +1088,19 @@ class VisorOrchestrator:
 
     async def step_4_patch(self, state: AgentState) -> AgentState:
         fn = globals().get("patch_with_muse_code", patch_with_muse_code)
+        # Workstream 2 (A2): target-file SHA-256 before/after the patch.
+        try:
+            from backend.core.artifacts import record_patch_hashes
+            record_patch_hashes(state, "pre")
+        except Exception:
+            pass
         state = await _call_node(fn, state, code_client=self.code_client,
                                  sandbox_runner=self.sandbox_runner)
+        try:
+            from backend.core.artifacts import record_patch_hashes
+            record_patch_hashes(state, "post")
+        except Exception:
+            pass
         await self.emit_update(state)
         return state
 
@@ -1104,6 +1133,13 @@ async def _drive_fsm(
     ``orchestrator.emit_update`` (class path).
     """
     use_events = event_broadcast is not None
+    # Workstream 1: snapshot baseline anomalies before VERIFY re-sense can
+    # replace them (additive extra field; FSM behavior unchanged).
+    try:
+        state.baseline_anomalies = [  # type: ignore[attr-defined]
+            a.model_dump(mode="json") for a in state.anomalies]
+    except Exception:
+        pass
     # Suppress per-node state emits on the event path to avoid duplicates.
     saved_callback = orchestrator.on_state_change
     saved_ws = orchestrator.ws_broadcast
