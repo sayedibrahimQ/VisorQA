@@ -150,7 +150,53 @@ export function ArchitectCoderInspector({ data, runId }: ArchitectCoderInspector
         {data.buildDetail ? (
           <span className="font-mono text-[10px] text-text-muted">{data.buildDetail}</span>
         ) : null}
+        {data.decision ? (
+          <span data-testid="strike-decision" className="font-mono text-[10px] text-text-secondary">
+            Decision: {data.decision}
+          </span>
+        ) : null}
       </div>
+
+      {data.guardrails ? (
+        <div data-testid="guardrails" className="mt-2 flex flex-wrap gap-1.5 font-mono text-[10px]">
+          {(
+            [
+              ["BR-2 UI locked", data.guardrails.br2UiLocked],
+              ["BR-3 desktop preserved", data.guardrails.br3DesktopPreserved],
+              ["BR-4 no hacks", data.guardrails.br4NoHacks],
+            ] as const
+          ).map(([label, value]) => (
+            <span
+              key={label}
+              className={cn(
+                "rounded-sm border px-1.5 py-0.5",
+                value === true && "border-verified-emerald/60 text-verified-emerald",
+                value === false && "border-defect-crimson/60 text-defect-crimson",
+                value === null && "border-border-subtle text-text-muted",
+              )}
+            >
+              {label}: {value === null ? "—" : value ? "pass" : "fail"}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {data.integrity ? (
+        <dl data-testid="integrity-hashes" className="mt-2 space-y-0.5 font-mono text-[10px] text-text-muted">
+          <div className="flex justify-between gap-2">
+            <dt>diff sha256</dt>
+            <dd className="truncate text-text-secondary">{data.integrity.diffSha256?.slice(0, 16) ?? "—"}</dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt>target pre</dt>
+            <dd className="truncate text-text-secondary">{data.integrity.preSha256?.slice(0, 16) ?? "—"}</dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt>target post</dt>
+            <dd className="truncate text-text-secondary">{data.integrity.postSha256?.slice(0, 16) ?? "—"}</dd>
+          </div>
+        </dl>
+      ) : null}
 
       <div role="tablist" aria-label="Inspector tabs" className="mt-3 flex gap-1 rounded-sm border border-border-subtle bg-canvas p-0.5">
         <button

@@ -1,7 +1,11 @@
 "use client";
 
-import React from "react";
-import { useMissionControlStream } from "@/hooks/useMissionControlStream";
+import React, { useEffect, useState } from "react";
+import {
+  resolveApiBase,
+  useMissionControlStream,
+} from "@/hooks/useMissionControlStream";
+import { useRunDetails } from "@/hooks/useRunDetails";
 import { LiveTrace } from "@/components/LiveTrace";
 import { PRRunSidebar } from "@/components/mission-control/PRRunSidebar";
 import { FSMOrchestratorBar } from "@/components/mission-control/FSMOrchestratorBar";
@@ -13,6 +17,14 @@ import { ArchitectCoderInspector } from "@/components/mission-control/ArchitectC
 import { getAttemptState, isHistoricalRun } from "@/lib/fsmSelectors";
 import { adaptRunToStage } from "@/lib/viewportArtifacts";
 import { getInspector, getScorecard, getTriage } from "@/lib/telemetryDrawer";
+import {
+  attemptOptions,
+  inspectorForAttempt,
+  latestAttemptNumber,
+  scorecardForAttempt,
+  stageForAttempt,
+  triageForRun,
+} from "@/lib/runDetails";
 
 /**
  * Mission Control workspace. The active run is focused automatically when a
@@ -30,13 +42,31 @@ export default function MissionControlPage() {
     error,
     reconnectAttempt,
     focusLatencyMs,
+    lastEventAt,
     selectRun,
   } = useMissionControlStream();
 
+  // Workstream 2: hydrate rich details for the selection. liveKey changes
+  // on WS status/strike transitions (incl. terminal) -> immediate refetch;
+  // the hook's generation guard drops stale in-flight responses.
+  const liveKey = `${activeRun?.status ?? ""}:${activeRun?.strikes ?? 0}:${lastEventAt ?? ""}`;
+  const { details } = useRunDetails(activeRunId, { liveKey });
+  const apiBase = resolveApiBase();
+
+  const [selectedAttempt, setSelectedAttempt] = useState<number | null>(null);
+  useEffect(() => {
+    setSelectedAttempt(null);
+  }, [activeRunId]);
+  const effectiveAttempt = selectedAttempt ?? latestAttemptNumber(details);
+
   const stage = adaptRunToStage(activeRun);
+  const liveStage = details ? stageForAttempt(details, effectiveAttempt, apiBase) : null;
+  const liveScorecard = details ? scorecardForAttempt(details, effectiveAttempt) : null;
   const scorecard = getScorecard(activeRun);
-  const triage = getTriage(activeRun);
-  const inspector = getInspector(activeRun);
+  const triage = details ? triageForRun(details) : getTriage(activeRun);
+  const inspector = details
+    ? inspectorForAttempt(details, effectiveAttempt)
+    : getInspector(activeRun);
   const runActive = activeRun !== null && !isHistoricalRun(activeRun);
 
   return (
@@ -91,10 +121,15 @@ export default function MissionControlPage() {
                   <DualViewportStage
                     runId={stage.runId}
                     runLabel={stage.runLabel}
-                    mobile={stage.mobile}
-                    desktop={stage.desktop}
-                    hmr={stage.hmr}
+                    mobile={liveStage ? liveStage.mobile : stage.mobile}
+                    desktop={liveStage ? liveStage.desktop : stage.desktop}
+                    hmr={liveStage ? liveStage.hmr : stage.hmr}
                     untaggedCount={stage.untaggedCount}
+                    attempts={attemptOptions(details)}
+                    selectedAttempt={effectiveAttempt}
+                    onAttemptChange={setSelectedAttempt}
+                    sandboxProvider={liveStage?.sandboxProvider ?? null}
+                    hmrLatencyMs={liveStage?.hmrLatencyMs ?? null}
                   />
                 </div>
                 <div className="mt-4">
@@ -156,8 +191,9 @@ export default function MissionControlPage() {
           >
             <div className="space-y-5 rounded-md border border-border-subtle bg-surface-subtle p-3">
               <MathTrapScorecard
-                current={scorecard.current}
-                best={scorecard.best}
+                current={liveScorecard ? liveScorecard.current : scorecard.current}
+                best={liveScorecard ? null : scorecard.best}
+                baseline={liveScorecard?.baseline ?? null}
                 runActive={runActive}
               />
               <div className="border-t border-border-subtle" />
