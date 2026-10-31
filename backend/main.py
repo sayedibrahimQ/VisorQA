@@ -4,7 +4,7 @@ Autonomous Visual QA & Self-Healing Frontend Agent
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -66,6 +66,13 @@ app.include_router(ws_router)
 app.include_router(auth_router)
 app.include_router(github_router)
 app.include_router(github_runs_router)
+
+
+@app.get("/github/callback", include_in_schema=False)
+async def root_github_callback_alias(request: Request, code: str = "", state: str = ""):
+    from backend.api.auth import github_callback
+    return await github_callback(request, code=code, state=state)
+
 
 # Static artifacts for Mission Control (collision overlays, screenshots).
 # Files live under <repo>/static/artifacts/{run_id}/ and are served at

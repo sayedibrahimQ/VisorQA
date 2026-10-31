@@ -51,6 +51,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const authErr = params.get("auth_error");
+      if (authErr) {
+        setError(`Authentication failed: ${authErr}`);
+        const clean = new URL(window.location.href);
+        clean.searchParams.delete("auth_error");
+        window.history.replaceState({}, "", clean.toString());
+      } else if (params.get("auth") === "ok") {
+        const clean = new URL(window.location.href);
+        clean.searchParams.delete("auth");
+        window.history.replaceState({}, "", clean.toString());
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {

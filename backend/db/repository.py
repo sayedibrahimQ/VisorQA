@@ -216,6 +216,11 @@ async def init_db() -> None:
                     "WHERE status NOT IN ('RESOLVED', 'FALLBACK', 'FAILED');"
                 )
             )
+            await conn.execute(
+                text(
+                    "ALTER TABLE repair_attempts ADD COLUMN IF NOT EXISTS telemetry JSONB NOT NULL DEFAULT '{}'::jsonb;"
+                )
+            )
 
 
 async def get_session() -> AsyncSession:
