@@ -155,6 +155,9 @@ export interface TriageData {
   targets: string[];
   rejected: TriageRejectedTarget[];
   filteredIntentional: string[];
+  /** Node 2 token-reduction telemetry (Workstream 4), when hydrated. */
+  tokenReductionRatio?: number | null;
+  candidateFiles?: string[];
 }
 
 function descriptorId(d: NodeDescriptorInfo): string | null {
@@ -295,6 +298,20 @@ export interface InspectorData {
   diffApplied: boolean | null;
   build: BuildState;
   buildDetail: string | null;
+  /** SHA-256 integrity (Workstream 4), when hydrated from patch telemetry. */
+  integrity?: {
+    diffSha256: string | null;
+    preSha256: string | null;
+    postSha256: string | null;
+  } | null;
+  /** BR-2/BR-3/BR-4 guardrail flags (Workstream 4), when hydrated. */
+  guardrails?: {
+    br2UiLocked: boolean | null;
+    br3DesktopPreserved: boolean | null;
+    br4NoHacks: boolean | null;
+  } | null;
+  /** Node 5 strike decision (Workstream 4), when hydrated. */
+  decision?: string | null;
 }
 
 const APPLIED_PHASES = new Set([

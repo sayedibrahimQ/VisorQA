@@ -159,6 +159,8 @@ class AttemptRecord(SQLModel, table=True):
     # Architect (Muse Wonder) & Coder (Muse Code) Artifacts
     repair_spec: Dict[str, Any] = Field(default={}, sa_column=Column(JSONB, nullable=False))
     unified_diff: Optional[str] = Field(default=None)
+    # Workstream 1: complete per-attempt/viewport telemetry snapshot JSON.
+    telemetry: Dict[str, Any] = Field(default={}, sa_column=Column(JSONB, nullable=False))
 
     # Dual-Viewport Verification Telemetry (BR-3)
     mobile_v_r_min: float = Field(default=0.0)

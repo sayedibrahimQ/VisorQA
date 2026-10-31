@@ -148,6 +148,15 @@ export function LCATriageTree({ triage }: { triage: TriageData }) {
           Filtered as intentional overlap: {triage.filteredIntentional.join(", ")}
         </p>
       ) : null}
+
+      {triage.tokenReductionRatio !== null && triage.tokenReductionRatio !== undefined ? (
+        <p data-testid="lca-token-ratio" className="mt-2 font-mono text-[10px] text-text-muted">
+          Token reduction {(triage.tokenReductionRatio * 100).toFixed(1)}%
+          {triage.candidateFiles && triage.candidateFiles.length > 0
+            ? ` · ${triage.candidateFiles.length} candidate files`
+            : ""}
+        </p>
+      ) : null}
     </section>
   );
 }

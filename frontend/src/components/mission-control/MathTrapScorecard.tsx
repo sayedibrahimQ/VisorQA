@@ -16,6 +16,8 @@ interface MathTrapScorecardProps {
   best: AttemptTrapSnapshot | null;
   /** True while the run may still produce measurements (Pending vs Unavailable). */
   runActive: boolean;
+  /** Baseline (attempt_0, before) snapshot for delta comparison. */
+  baseline?: AttemptTrapSnapshot | null;
 }
 
 const TRAPS: { kind: TrapKind; label: string; rule: string; digits: number; unit?: string }[] = [
@@ -160,12 +162,17 @@ function Snapshot({ snapshot, awaiting }: { snapshot: AttemptTrapSnapshot; await
  * thresholds, evaluated on raw values. The overall verdict line is the
  * backend's own `verification_status`; no frontend verdict is computed.
  */
-export function MathTrapScorecard({ current, best, runActive }: MathTrapScorecardProps) {
+export function MathTrapScorecard({ current, best, runActive, baseline = null }: MathTrapScorecardProps) {
   return (
     <section aria-label="Math trap scorecard" data-testid="math-trap-scorecard" className="min-w-0">
       <h3 className="font-display text-sm font-semibold text-text-primary">Math Traps</h3>
       {current ? (
         <div className="mt-2 space-y-4">
+          {baseline ? (
+            <div data-testid="scorecard-baseline" className="border-b border-border-subtle pb-3 opacity-80">
+              <Snapshot snapshot={baseline} awaiting={false} />
+            </div>
+          ) : null}
           <Snapshot snapshot={current} awaiting={runActive} />
           {best ? (
             <div className="border-t border-border-subtle pt-3">

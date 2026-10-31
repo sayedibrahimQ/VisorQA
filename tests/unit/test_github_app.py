@@ -116,9 +116,10 @@ async def test_get_installation_token_success_and_cache(sample_rsa_keys):
         default_installation_id="11223344",
     )
 
+    from datetime import datetime, timezone, timedelta
     fake_response = {
         "token": "ghs_test_token_1234567890abcdef",
-        "expires_at": "2026-10-30T12:00:00Z",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
     }
 
     mock_client = AsyncMock()

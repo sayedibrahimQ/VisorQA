@@ -39,6 +39,13 @@ export interface DualViewportStageProps {
   error?: string | null;
   initialViewport?: ViewportName;
   className?: string;
+  /** Strike scrubber (Workstream 3): baseline + strike options. */
+  attempts?: { attemptNumber: number; label: string }[];
+  selectedAttempt?: number;
+  onAttemptChange?: (attemptNumber: number) => void;
+  /** Real sandbox provider + HMR latency for the selected attempt. */
+  sandboxProvider?: string | null;
+  hmrLatencyMs?: number | null;
 }
 
 interface HoverTarget {
@@ -573,6 +580,11 @@ export function DualViewportStage({
   error = null,
   initialViewport = "mobile",
   className,
+  attempts,
+  selectedAttempt,
+  onAttemptChange,
+  sandboxProvider = null,
+  hmrLatencyMs = null,
 }: DualViewportStageProps) {
   const [viewport, setViewport] = useState<ViewportName>(initialViewport);
   const [sideBySide, setSideBySide] = useState(false);
@@ -733,6 +745,41 @@ export function DualViewportStage({
           <VerificationStrip data={desktop} />
         </div>
       </div>
+
+      {/* Strike timeline scrubber (Workstream 3) */}
+      {attempts && attempts.length > 0 && onAttemptChange ? (
+        <div
+          data-testid="attempt-scrubber"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle px-3 py-1.5"
+        >
+          <div role="group" aria-label="Strike attempt timeline" className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 font-mono text-[10px] uppercase tracking-wider text-text-muted">
+              Timeline
+            </span>
+            {attempts.map((a) => (
+              <button
+                key={a.attemptNumber}
+                type="button"
+                data-testid={`attempt-btn-${a.attemptNumber}`}
+                aria-pressed={selectedAttempt === a.attemptNumber}
+                onClick={() => onAttemptChange(a.attemptNumber)}
+                className={cn(
+                  "rounded-sm border px-2 py-1 font-mono text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus",
+                  selectedAttempt === a.attemptNumber
+                    ? "border-neural-pulse/60 bg-elevated font-semibold text-text-primary"
+                    : "border-border-subtle text-text-muted hover:text-text-primary",
+                )}
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+          <span data-testid="stage-sandbox" className="font-mono text-[10px] text-text-muted">
+            sandbox {sandboxProvider ?? "—"}
+            {hmrLatencyMs !== null ? ` · HMR ${Math.round(hmrLatencyMs)} ms` : ""}
+          </span>
+        </div>
+      ) : null}
 
       {/* Canvas */}
       <div className="min-w-0 p-3">

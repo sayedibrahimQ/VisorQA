@@ -7,6 +7,105 @@ export type FSMStep =
 
 export type RunStatus = "PENDING" | "RUNNING" | "RESOLVED" | "FAILED";
 
+// ---------------------------------------------------------------------------
+// Rich run details (GET /api/runs/{id}, Workstream 1 backend payload)
+// ---------------------------------------------------------------------------
+
+export interface ElementMetric {
+  visor_el_id: string;
+  v_r: number | null;
+  iou: number | null;
+  delta_x: number | null;
+  colliding_with?: string | null;
+  is_occluded?: boolean;
+  trap_fired?: string | null;
+  defect_type?: string | null;
+  viewport?: string | null;
+}
+
+export interface ViewportSummary {
+  viewport: string;
+  width: number;
+  height: number;
+  v_r: number | null;
+  iou: number | null;
+  delta_x: number | null;
+  health_score: number | null;
+  valid: boolean;
+  passed: boolean | null;
+  failure_reasons: string[];
+}
+
+export interface TriageMetadataPayload {
+  lca_element_id: string | null;
+  lca_dom: Record<string, unknown>;
+  hierarchy?: unknown[];
+  candidate_files: string[];
+  target_files: string[];
+  target_file: string | null;
+  locked_shared_ui_globs: string[];
+  triage_status: string | null;
+  triage_confidence: number | null;
+  triage_summary: string | null;
+  rejected_targets: TriageRejectedTarget[];
+  token_reduction_ratio: number | null;
+}
+
+export interface PatchTelemetry {
+  unified_diff: string | null;
+  diff_sha256: string | null;
+  target_file: string | null;
+  target_pre_sha256: string | null;
+  target_post_sha256: string | null;
+  guardrails: { br2_ui_locked: boolean | null; br3_desktop_preserved: boolean | null; br4_no_hacks: boolean | null };
+  sandbox_provider: string | null;
+  sandbox_phase: string | null;
+  hmr_status: string | null;
+  hmr_latency_ms: number | null;
+  build_status: string;
+  applied_cleanly: boolean;
+}
+
+export interface VerificationFeedback {
+  dual_viewport_passed: boolean | null;
+  verification_status: string | null;
+  strike_decision: string | null;
+  failure_reasons: string[];
+  github?: { publication_status?: string; commit_pushed?: boolean; commit_sha?: string | null; review_comment_posted?: boolean };
+}
+
+export interface AttemptTelemetry {
+  attempt_number: number;
+  kind: string;
+  screenshots: Record<"mobile" | "desktop", { before_url: string | null; after_url: string | null }>;
+  sam_masks: Record<"mobile" | "desktop", { mask_url: string | null; overlay_url: string | null }>;
+  b_dom_boxes: Record<string, { x: number; y: number; width: number; height: number; cx: number; cy: number }>;
+  element_metrics: ElementMetric[];
+  viewport_summary: Record<"mobile" | "desktop", ViewportSummary>;
+  triage_metadata: TriageMetadataPayload;
+  repair_spec: RepairSpecPayload | null;
+  patch_telemetry: PatchTelemetry;
+  verification_feedback: VerificationFeedback;
+  unified_diff?: string | null;
+  passed?: boolean | null;
+}
+
+export interface RunDetails {
+  id: string;
+  pr_number: number;
+  repo_name: string;
+  branch: string;
+  commit_sha: string;
+  status: string;
+  current_step: string;
+  strikes: number;
+  attempts: AttemptTelemetry[];
+  triage_metadata: TriageMetadataPayload;
+  artifacts?: unknown[];
+  verification_status?: string;
+  is_resolved?: boolean;
+}
+
 export type DefectType = "OCCLUSION" | "COLLISION" | "VIEWPORT_OVERFLOW";
 
 export interface DOMBoundingBox {
