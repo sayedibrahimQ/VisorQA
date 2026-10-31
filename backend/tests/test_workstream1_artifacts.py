@@ -163,6 +163,10 @@ def test_seed_three_canonical_runs_with_real_pngs(tmp_path):
 def api_env(tmp_path, monkeypatch):
     from backend.config import settings
     monkeypatch.setattr(settings, "BROWSER_ARTIFACTS_DIR", str(tmp_path))
+    # Pin non-live mode so seed-registry listing is exercised deterministically
+    # regardless of the developer's configured GitHub credentials.
+    monkeypatch.setattr(settings, "GITHUB_PAT", "")
+    monkeypatch.setattr(settings, "GITHUB_APP_ID", "")
     store = ArtifactStore(root=tmp_path)
     seed_canonical_runs(store)
     return store
