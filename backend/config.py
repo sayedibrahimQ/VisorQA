@@ -47,6 +47,8 @@ class Settings(BaseSettings):
         description="SQLModel Database connection URL"
     )
     GITHUB_PAT: str = Field(default="", description="GitHub Personal Access Token")
+    GITHUB_CLIENT_ID: str = Field(default="", description="GitHub OAuth App client id")
+    GITHUB_CLIENT_SECRET: str = Field(default="", description="GitHub OAuth App client secret")
     GITHUB_WEBHOOK_SECRET: str = Field(default="", description="GitHub Webhook HMAC Secret")
 
     # GitHub App Integration (visorqa-bot[bot])
@@ -119,6 +121,9 @@ class Settings(BaseSettings):
     BROWSER_ALLOWED_SCHEMES: str = Field(default="http,https")
     BROWSER_ARTIFACTS_DIR: str = Field(default="artifacts")
     STATIC_ARTIFACTS_DIR: str = Field(default="static/artifacts")
+    SEED_DEMO_RUNS: bool = Field(
+        default=True,
+        description="Seed canonical demo runs when no GitHub auth is configured (never in live mode)")
 
 
 settings = Settings()
