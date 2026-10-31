@@ -23,6 +23,10 @@ export interface Anomaly {
   bounding_box?: DOMBoundingBox;
   visibility_ratio?: number;
   iou_score?: number;
+  /** Viewport tag ('375px' | '1440px'). Mirrors AnomalyRecord.viewport; omitted by serializers today. */
+  viewport?: string;
+  /** Horizontal overflow in px. Mirrors AnomalyRecord.bleed_px; omitted by serializers today. */
+  bleed_px?: number;
   sam_mask_path?: string;
   status: string;
 }
