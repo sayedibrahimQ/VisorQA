@@ -63,7 +63,29 @@ _GEOMETRY_JS = """() => {
     if (cs.display === 'none' || cs.visibility === 'hidden' || r.width <= 0 || r.height <= 0) return;
     const id = el.getAttribute('data-visor-el-id') || ('visor-el-' + String(out.length+1).padStart(2,'0'));
     el.setAttribute('data-visor-el-id', id);
+    // Real visibility measurement: sample points inside the element box
+    // (clipped to the viewport) and count how many hit-test to this
+    // element or one of its descendants. Occluding overlays (e.g. a fixed
+    // banner) therefore lower the ratio exactly as a user would see it.
+    let vrHits = 0, vrTotal = 0;
+    const vx0 = Math.max(r.left, 0), vy0 = Math.max(r.top, 0);
+    const vx1 = Math.min(r.right, innerWidth), vy1 = Math.min(r.bottom, innerHeight);
+    if (vx1 > vx0 && vy1 > vy0) {
+      const nx = Math.min(5, Math.max(1, Math.floor((vx1 - vx0) / 24)));
+      const ny = Math.min(5, Math.max(1, Math.floor((vy1 - vy0) / 24)));
+      for (let ix = 0; ix < nx; ix++) {
+        for (let iy = 0; iy < ny; iy++) {
+          const px = vx0 + ((ix + 0.5) * (vx1 - vx0)) / nx;
+          const py = vy0 + ((iy + 0.5) * (vy1 - vy0)) / ny;
+          const hit = document.elementFromPoint(px, py);
+          vrTotal += 1;
+          if (hit && (hit === el || el.contains(hit))) vrHits += 1;
+        }
+      }
+    }
+    const visibilityRatio = vrTotal ? vrHits / vrTotal : 0;
     out.push({element_id: id, visor_el_id: id, tag: el.tagName.toLowerCase(),
+      visibility_ratio: visibilityRatio, v_r: visibilityRatio,
       bounding_box: {x: r.x, y: r.y, width: r.width, height: r.height},
       b_dom_box: {x: r.x, y: r.y, width: r.width, height: r.height},
       c_x: r.x + r.width/2, c_y: r.y + r.height/2,
@@ -146,9 +168,9 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
         if repo_url or not src_raw:
             return super()._prepare_checkout(workdir, source_dir, repo_url, branch, commit_sha)
         src = Path(src_raw).expanduser()
-        if not src.is_dir():
-            ensure_target_fixture(src)
-        else:
+        if src.resolve() == workdir.resolve():
+            return
+        if not src.is_dir() or not any(src.iterdir()):
             ensure_target_fixture(src)
         if (src / ".git").exists():
             # Fast detached worktree; fall back to the clone/copy path.
@@ -210,9 +232,10 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
         for key in ("repo_root", "repository_root", "checkout_path", "workspace_dir",
                     "repo_path", "repository_path"):
             spec.setdefault(key, root)
-        spec.setdefault("repository_files", files)
-        spec.setdefault("file_tree", files)
-        spec.setdefault("repo_files", files)
+        if not spec.get("repository_files") and files:
+            spec["repository_files"] = files
+        spec.setdefault("file_tree", spec.get("repository_files") or files)
+        spec.setdefault("repo_files", spec.get("repository_files") or files)
         state.repair_spec = spec
         try:
             state.sandbox.working_dir = root

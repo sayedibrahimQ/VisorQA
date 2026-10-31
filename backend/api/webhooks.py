@@ -65,7 +65,72 @@ def verify_github_signature(payload_bytes: bytes, signature_header: Optional[str
     return hmac.compare_digest(expected_signature, signature_header)
 
 
-async def _run_agent_lifecycle(state: AgentState) -> None:
+async def _run_agent_lifecycle_hydrated(state: AgentState, token: str = "") -> None:
+    """Dispatch wrapper: hydrate the PR worktree, then run the FSM.
+
+    Injects repo_root + repository_files so Node 2 triages a real tree,
+    Node 3 targets a real file, and Node 4 applies a verified diff.
+    Hydration failure is non-fatal: the pipeline fails closed as before.
+    """
+    try:
+        from backend.core.worktree import hydrate_pr_workspace
+
+        ws = await hydrate_pr_workspace(
+            state.run_id,
+            state.repo_full_name or state.repo_name,
+            state.branch,
+            state.pr_number,
+            token,
+        )
+        if ws.get("root"):
+            spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
+            spec["repo_root"] = ws["root"]
+            spec["repository_files"] = ws["repository_files"]
+            spec["worktree_strategy"] = ws["strategy"]
+            state.repair_spec = spec
+            logger.info(
+                f"Hydrated workspace for run {state.run_id} via {ws['strategy']}: "
+                f"{len(ws['repository_files'])} frontend files")
+    except Exception as hyd_err:
+        logger.error(f"Workspace hydration failed for run {state.run_id}: {hyd_err}")
+    # Bind a worktree sandbox runner to the hydrated workspace so Sense
+    # renders the target app and Node 4 applies to real files.
+    runner = None
+    try:
+        spec_now = state.repair_spec if isinstance(state.repair_spec, dict) else {}
+        root = str(spec_now.get("repo_root") or "")
+        if root:
+            from pathlib import Path as _Path
+
+            from backend.adapters.sandbox_runner import LocalWorktreeSandboxRunner
+
+            source = root
+            if not getattr(state, "repo_full_name", "") and not getattr(state, "pr_number", 0):
+                demo_app = _Path(root) / "demo-target-app"
+                if demo_app.is_dir():
+                    source = str(demo_app)
+            runner = LocalWorktreeSandboxRunner(source_dir=source)
+            # Provision the per-run workspace, then start the preview
+            # server (no FSM node starts it; Sense needs it live).
+            try:
+                await runner.ensure_and_inject(state)
+                await runner.start_dev_server()
+            except Exception as srv_err:
+                logger.error(
+                    f"Dev server start failed for run {state.run_id}: {srv_err}")
+    except Exception as runner_err:
+        logger.error(f"Sandbox runner binding failed for run {state.run_id}: {runner_err}")
+    try:
+        await _run_agent_lifecycle(state, sandbox_runner=runner)
+    finally:
+        if runner is not None:
+            try:
+                await runner.terminate()
+            except Exception:
+                pass
+
+
+async def _run_agent_lifecycle(state: AgentState, sandbox_runner: Any = None) -> None:
     """Asynchronous background worker for run_visor_agent.
 
     Ensures lifecycle safety, fresh DB session isolation, and FSM failure handling.
@@ -75,7 +140,8 @@ async def _run_agent_lifecycle(state: AgentState) -> None:
         from backend.core.orchestrator import run_visor_agent
 
         logger.info(f"Dispatching autonomous QA agent for run {state.run_id} ({state.repo_full_name} PR #{state.pr_number})")
-        final_state = await run_visor_agent(state, ws_broadcast=ws_broadcast)
+        final_state = await run_visor_agent(
+            state, ws_broadcast=ws_broadcast, sandbox_runner=sandbox_runner)
 
         # Workstream 1: persist per-attempt telemetry + artifacts (non-fatal).
         try:

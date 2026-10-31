@@ -170,9 +170,12 @@ def apply_unified_diff(source: str, diff: str) -> str:
 def _diff_target_files(diff: str) -> List[str]:
     files: List[str] = []
     for line in diff.split("\n"):
-        if line.startswith("+++ b/"):
-            path = line[len("+++ b/"):].strip()
-            if path and path not in files:
+        if line.startswith("+++ "):
+            raw = line[4:].strip()
+            if raw.startswith("b/"):
+                raw = raw[2:]
+            path = raw.split("\t")[0].strip()
+            if path and path not in files and path != "/dev/null":
                 files.append(path)
     return files
 

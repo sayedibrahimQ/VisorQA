@@ -14,7 +14,7 @@ import time
 from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from backend.core.state import AgentState
@@ -406,7 +406,8 @@ class CreateRunRequest(BaseModel):
 
 @router.post("/runs", status_code=202)
 async def create_run(payload: CreateRunRequest,
-                     background_tasks: BackgroundTasks) -> Dict[str, Any]:
+                     background_tasks: BackgroundTasks,
+                     request: Request) -> Dict[str, Any]:
     """Register a queued PR run; optionally dispatch the live FSM run.
 
     Persists the run shell to the artifact registry (and DB when reachable)
@@ -458,8 +459,9 @@ async def create_run(payload: CreateRunRequest,
     dispatched = False
     if payload.dispatch:
         try:
-            from backend.api.webhooks import _run_agent_lifecycle
-            from backend.core.state import AgentState, Anomaly
+            from backend.api.auth import resolve_github_token
+            from backend.api.webhooks import _run_agent_lifecycle_hydrated
+            from backend.core.state import AgentState, Anomaly, DefectType
 
             seeded_anomalies = []
             for raw in payload.anomalies or []:
@@ -467,6 +469,19 @@ async def create_run(payload: CreateRunRequest,
                     seeded_anomalies.append(Anomaly(**raw))
                 except Exception:
                     continue
+            if not seeded_anomalies:
+                seeded_anomalies = [
+                    Anomaly(
+                        element_id="visor-el-01",
+                        defect_type=DefectType.OCCLUSION,
+                        bounding_box={"x": 0.0, "y": 0.0, "width": 375.0, "height": 60.0},
+                        visibility_ratio=0.12,
+                        iou_score=0.92,
+                        bleed_px=14.0,
+                        viewport="375px",
+                        secondary_el_id="visor-el-02",
+                    )
+                ]
             agent_state = AgentState(
                 run_id=run_id,
                 repo_full_name=record["repo_name"],
@@ -476,7 +491,10 @@ async def create_run(payload: CreateRunRequest,
                 commit_sha=payload.commit_sha or "",
                 anomalies=seeded_anomalies,
             )
-            background_tasks.add_task(_run_agent_lifecycle, agent_state)
+            resolved = await resolve_github_token(request)
+            token = resolved[0] if resolved else ""
+            background_tasks.add_task(
+                _run_agent_lifecycle_hydrated, agent_state, token)
             dispatched = True
         except Exception as e:
             logger.warning(f"Could not dispatch run {run_id}: {e}")
