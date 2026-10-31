@@ -308,8 +308,13 @@ async def ws_broadcast(event_type: str, state: Any) -> float:
 # -----------------------------------------------------------------------------
 
 @router.get("/runs")
-async def list_runs() -> List[Dict[str, Any]]:
-    """Lists recent PR QA Runs from DB + artifact registry, demo fallback last."""
+async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Lists recent PR QA Runs from DB + artifact registry, demo fallback last.
+
+    With `?repo={owner}/{repo}` the result is strictly scoped to that
+    repository (no demo fallback, no cross-repo leakage).
+    """
+    repo_filter = (repo or "").strip()
     results: List[Dict[str, Any]] = []
     try:
         from backend.db.repository import AsyncSessionLocal, RunRepository
@@ -317,6 +322,8 @@ async def list_runs() -> List[Dict[str, Any]]:
             repo = RunRepository(session)
             db_runs = await repo.list_runs(limit=50)
             for r in db_runs:
+                if repo_filter and r.repo_full_name != repo_filter:
+                    continue
                 results.append({
                     "id": r.id,
                     "pr_number": r.pr_number,
@@ -333,11 +340,24 @@ async def list_runs() -> List[Dict[str, Any]]:
         logger.warning(f"Could not load runs from database: {e}")
 
     # Artifact-registry runs (seeded + live-persisted) merge without dupes.
+    # Live mode (GitHub auth configured): seed/demo records never pollute.
+    try:
+        from backend.config import settings as _settings
+        _live_mode = bool((_settings.GITHUB_PAT or "").strip()
+                          or (_settings.GITHUB_APP_ID or "").strip())
+    except Exception:
+        _live_mode = False
     try:
         from backend.core.artifacts import ArtifactStore
         known = {r["id"] for r in results}
         for rec in ArtifactStore().list_run_records():
             if rec.get("id") in known:
+                continue
+            rec_id = str(rec.get("id") or "")
+            if _live_mode and (rec_id.startswith("run-seed-") or rec_id == "run-demo-42"):
+                continue
+            rec_repo = rec.get("repo_full_name") or rec.get("repo_name") or ""
+            if repo_filter and rec_repo != repo_filter:
                 continue
             results.append({
                 "id": rec.get("id"),
@@ -355,8 +375,9 @@ async def list_runs() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Could not load artifact registry runs: {e}")
 
-    # Ensure demo runs are also available for inspection if list is empty or for demo-42
-    if not any(r["id"] == "run-demo-42" for r in results):
+    # Demo fallback only for the unscoped list when nothing exists at all;
+    # a repository-scoped query must never fall back to fake PRs.
+    if not repo_filter and not any(r["id"] == "run-demo-42" for r in results):
         results.append({
             "id": "run-demo-42",
             "pr_number": 42,
