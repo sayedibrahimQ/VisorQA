@@ -757,6 +757,14 @@ def record_patch_hashes(state: Any, phase: str, working_dir: str = "") -> None:
     if not workdir:
         sandbox = getattr(state, "sandbox", None)
         workdir = str(getattr(sandbox, "working_dir", "") or "")
+    if not workdir:
+        # Hydrated worktree (Workstream: live diff) lives in repair_spec.
+        spec_probe = getattr(state, "repair_spec", None)
+        if isinstance(spec_probe, dict):
+            for key in ("repo_root", "repository_root", "checkout_path"):
+                if spec_probe.get(key):
+                    workdir = str(spec_probe[key])
+                    break
     spec = dict(getattr(state, "repair_spec", None) or {})
     hashes = dict(spec.get("patch_file_hashes") or {})
     key = "pre_sha256" if phase == "pre" else "post_sha256"

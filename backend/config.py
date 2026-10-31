@@ -29,7 +29,7 @@ class Settings(BaseSettings):
         default="muse-spark-1.3",
         description="Muse Spark triage model served by the Meta Model API",
     )
-    SPARK_TIMEOUT_SECONDS: float = Field(default=15.0)
+    SPARK_TIMEOUT_SECONDS: float = Field(default=30.0)
     MUSE_WONDER_MODEL: str = Field(
         default="muse-wonder-1.0",
         description="Muse Wonder diagnosis model served by the Meta Model API",
@@ -86,7 +86,11 @@ class Settings(BaseSettings):
     # is kept as a backward-compatible alias. Factory resolution: an explicit
     # non-default value in either wins; both default to "local".
     SANDBOX_BACKEND: str = Field(default="local", description="Sandbox backend: local | modal | stub")
-    SANDBOX_PROVIDER: str = Field(default="local", description="Sandbox provider: local | modal | stub")
+    # Canonical provider: "e2b" | "local" | "modal" | "stub". Empty means
+    # auto: "e2b" when E2B_API_KEY is set, else "local".
+    SANDBOX_PROVIDER: str = Field(default="", description="Sandbox provider: e2b | local | modal | stub (empty = auto)")
+    E2B_API_KEY: str = Field(default="", description="E2B cloud sandbox API key")
+    E2B_SANDBOX_TIMEOUT_SECONDS: int = Field(default=180, description="E2B sandbox lifetime bound")
     TARGET_APP_PATH: str = Field(default="./demo-target-app", description="Source target app directory")
     TARGET_APP_PORT: int = Field(default=3001, description="Preferred target app dev-server port")
     SANDBOX_LOCAL_ROOT: str = Field(default="", description="Local sandbox root (default: /tmp/visorqa_sandboxes)")

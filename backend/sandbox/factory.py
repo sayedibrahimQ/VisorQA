@@ -20,9 +20,12 @@ def _resolve_name(cfg: Any, backend: Optional[str]) -> str:
     # An explicit non-default value in either spelling wins.
     if legacy and legacy != "local":
         return legacy
-    if provider and provider != "local":
+    if provider:
         return provider
-    return provider or legacy or "local"
+    # Auto: E2B cloud when a key is configured, else local.
+    if str(getattr(cfg, "E2B_API_KEY", "") or "").strip():
+        return "e2b"
+    return legacy or "local"
 
 
 def create_sandbox_runner(settings_obj: Any = None, backend: Optional[str] = None) -> SandboxRunner:
@@ -39,6 +42,15 @@ def create_sandbox_runner(settings_obj: Any = None, backend: Optional[str] = Non
             idle_timeout=float(getattr(cfg, "SANDBOX_IDLE_TIMEOUT_SECONDS", 1800.0)),
             cpu_limit=getattr(cfg, "SANDBOX_CPU_LIMIT", None) or None,
             memory_limit_mb=getattr(cfg, "SANDBOX_MEMORY_LIMIT_MB", None) or None)
+    if name == "e2b":
+        from backend.adapters.sandbox_runner import E2BSandboxRunner
+        return E2BSandboxRunner(
+            source_dir=str(getattr(cfg, "TARGET_APP_PATH", "./demo-target-app") or "./demo-target-app"),
+            api_key=str(getattr(cfg, "E2B_API_KEY", "") or "") or None,
+            sandbox_timeout=int(getattr(cfg, "E2B_SANDBOX_TIMEOUT_SECONDS", 180) or 180),
+            target_app_port=int(getattr(cfg, "TARGET_APP_PORT", 3001) or 3001),
+            base_dir=getattr(cfg, "SANDBOX_LOCAL_ROOT", "") or None,
+            hmr_timeout=float(getattr(cfg, "SANDBOX_HMR_TIMEOUT_SECONDS", 15.0)))
     if name == "stub":
         from backend.adapters.sandbox_runner import StubSandboxRunner
         return StubSandboxRunner(
@@ -55,7 +67,7 @@ def create_sandbox_runner(settings_obj: Any = None, backend: Optional[str] = Non
             cpu_limit=getattr(cfg, "SANDBOX_CPU_LIMIT", None) or 2.0,
             memory_limit_mb=getattr(cfg, "SANDBOX_MEMORY_LIMIT_MB", None) or 4096)
     raise SandboxConfigError(
-        f"Invalid SANDBOX_BACKEND={name!r}. Supported values: 'local', 'modal', 'stub'. "
+        f"Invalid SANDBOX_BACKEND={name!r}. Supported values: 'e2b', 'local', 'modal', 'stub'. "
         "Set SANDBOX_BACKEND=local for credential-free development.")
 
 
