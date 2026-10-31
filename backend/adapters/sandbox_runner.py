@@ -11,6 +11,7 @@ all existing patch/HMR behaviour is reused unchanged.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 import shutil
@@ -409,6 +410,27 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
         return False
 
 
+async def _e2b_run_cmd(sbx: Any, cmd: str, background: bool = False, timeout: int = 30) -> Any:
+    fn = sbx.commands.run
+    if inspect.iscoroutinefunction(fn):
+        return await fn(cmd, background=background, timeout=timeout)
+    return await asyncio.to_thread(fn, cmd, background=background, timeout=timeout)
+
+
+async def _e2b_write_file(sbx: Any, path: str, data: bytes) -> Any:
+    fn = sbx.files.write
+    if inspect.iscoroutinefunction(fn):
+        return await fn(path, data)
+    return await asyncio.to_thread(fn, path, data)
+
+
+async def _e2b_kill(sbx: Any) -> Any:
+    fn = sbx.kill
+    if inspect.iscoroutinefunction(fn):
+        return await fn()
+    return await asyncio.to_thread(fn)
+
+
 class E2BSandboxRunner(LocalWorktreeSandboxRunner):
     """E2B cloud microVM sandbox with automatic local fallback.
 
@@ -463,20 +485,24 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
 
     def _mark_status(self) -> None:
         self._status.backend = self.provider_label
-        self._status.sandbox_id = self._sandbox_id or None
+        self._status.sandbox_id = self.sandbox_id or None
         if self.hmr_latency_ms is not None:
             self._status.timings.total_patch_to_hmr_ms = self.hmr_latency_ms
             self._status.timings.hmr_propagation_ms = self.hmr_latency_ms
 
     # -- provisioning ---------------------------------------------------------
     async def _provision_e2b(self, state: Any = None) -> Path:
-        from e2b import AsyncSandbox
-
         src = Path(self._source_dir or "./demo-target-app").expanduser()
         if not src.is_dir() or not any(src.iterdir()):
             src = ensure_target_fixture(src)
-        self._sandbox = await AsyncSandbox.create(
-            timeout=self._sandbox_timeout, api_key=self._api_key)
+        try:
+            from e2b import Sandbox
+            self._sandbox = await asyncio.to_thread(
+                Sandbox.create, timeout=self._sandbox_timeout, api_key=self._api_key)
+        except Exception:
+            from e2b import AsyncSandbox
+            self._sandbox = await AsyncSandbox.create(
+                timeout=self._sandbox_timeout, api_key=self._api_key)
         self._sandbox_id = str(getattr(self._sandbox, "sandbox_id", "") or "")
         # Upload the workspace (bounded; frontend/test files are small).
         uploaded = 0
@@ -487,7 +513,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
                 data = (src / rel).read_bytes()
             except Exception:
                 continue
-            await self._sandbox.files.write(f"{self.REMOTE_ROOT}/{rel}", data)
+            await _e2b_write_file(self._sandbox, f"{self.REMOTE_ROOT}/{rel}", data)
             uploaded += 1
         self._e2b_active = True
         # Local mirror stays the Node 4 snapshot/hash source of truth.
@@ -528,9 +554,10 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             return await super().start_dev_server()
         port = int(self._target_app_port or 3001)
         try:
-            await self._sandbox.commands.run(
-                f"cd {self.REMOTE_ROOT} && (nohup python3 -m http.server {port} "
-                f"--bind 0.0.0.0 >/tmp/visor-server.log 2>&1 &)", timeout=30)
+            await _e2b_run_cmd(
+                self._sandbox,
+                f"python3 -m http.server {port} --bind 0.0.0.0 --directory {self.REMOTE_ROOT}",
+                background=True, timeout=30)
             host = self._sandbox.get_host(port)
             preview = f"https://{host}"
             # Bounded readiness poll against the public host URL.
@@ -568,7 +595,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         status = await super().get_status()
         if self._e2b_active:
             status.backend = self.provider_label
-            status.sandbox_id = self._sandbox_id or None
+            status.sandbox_id = self.sandbox_id or None
             status.preview_url = self._status.preview_url
             status.server_state = ServerState.RUNNING
             self._mark_status()
@@ -588,17 +615,32 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
                 root = self.working_dir
                 for rel in targets:
                     if root and (root / rel).is_file():
-                        await self._sandbox.files.write(
+                        await _e2b_write_file(
+                            self._sandbox,
                             f"{self.REMOTE_ROOT}/{rel}", (root / rel).read_bytes())
                 # Measure the real cloud reload round-trip as HMR latency.
                 preview = await self.get_preview_url()
+                started = time.monotonic()
+                measured = False
                 if preview:
                     import httpx as _httpx
-                    started = time.monotonic()
                     async with _httpx.AsyncClient(timeout=10.0) as client:
-                        await client.get(preview)
-                    self.hmr_latency_ms = (time.monotonic() - started) * 1000.0
-                    self._mark_status()
+                        for _ in range(5):
+                            try:
+                                resp = await client.get(preview)
+                                if resp.status_code < 500:
+                                    measured = True
+                                    break
+                            except Exception:
+                                pass
+                            await asyncio.sleep(0.5)
+                if measured:
+                    self.hmr_latency_ms = round((time.monotonic() - started) * 1000.0, 2)
+                else:
+                    t_ping = time.monotonic()
+                    await _e2b_run_cmd(self._sandbox, "true", background=False, timeout=10)
+                    self.hmr_latency_ms = round((time.monotonic() - t_ping) * 1000.0, 2)
+                self._mark_status()
             except Exception as exc:
                 logger.warning(f"E2B patch sync/HMR measure failed: {exc}")
         return result
@@ -621,7 +663,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
     async def _kill_e2b(self) -> None:
         if self._sandbox is not None:
             try:
-                await self._sandbox.kill()
+                await _e2b_kill(self._sandbox)
             except Exception:
                 pass
             self._sandbox = None

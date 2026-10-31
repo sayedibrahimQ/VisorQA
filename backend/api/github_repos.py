@@ -133,25 +133,30 @@ def apply_unified_diff(source: str, diff: str) -> str:
     i = 0
     applied_any = False
     while i < len(lines):
-        m = re.match(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", lines[i])
+        m = re.match(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", lines[i])
         if not m:
             i += 1
             continue
         applied_any = True
         old_start = int(m.group(1)) - 1
+        old_count = int(m.group(2)) if m.group(2) is not None else 1
         if old_start < pos:
             raise ValueError("overlapping hunks")
         out.extend(src[pos:old_start])
         pos = old_start
         i += 1
+        consumed_old = 0
         while i < len(lines) and not lines[i].startswith("@@"):
             line = lines[i]
+            if consumed_old >= old_count and not line.startswith("+"):
+                break
             if line.startswith("+") and not line.startswith("+++"):
                 out.append(line[1:])
             elif line.startswith("-") and not line.startswith("---"):
                 if pos >= len(src) or src[pos] != line[1:]:
                     raise ValueError(f"context mismatch at source line {pos + 1}")
                 pos += 1
+                consumed_old += 1
             elif line.startswith("\\"):
                 pass
             else:
@@ -160,6 +165,7 @@ def apply_unified_diff(source: str, diff: str) -> str:
                     raise ValueError(f"context mismatch at source line {pos + 1}")
                 out.append(text)
                 pos += 1
+                consumed_old += 1
             i += 1
     if not applied_any:
         raise ValueError("no hunks found in diff")

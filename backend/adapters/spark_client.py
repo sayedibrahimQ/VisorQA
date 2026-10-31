@@ -149,7 +149,7 @@ class MuseSparkTriageClient:
         model: Optional[str] = None,
         client: Any = None,
         timeout_seconds: Optional[float] = None,
-        max_retries: int = 2,
+        max_retries: int = 1,
         backoff_base_seconds: float = 0.2,
         sleep: Any = None,
     ):
