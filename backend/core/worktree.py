@@ -95,12 +95,17 @@ async def _api_materialize(dest: Path, repo_full_name: str, branch: str,
             priority = [str(f.get("filename")) for f in files if f.get("filename")]
     candidates = [p for p in priority if p.lower().endswith(FRONTEND_EXTS)]
     if not candidates:
+        # PR touched no frontend files (backend/markdown only): fall back
+        # to real frontend components from the repo tree so triage still
+        # has a genuine, non-protected target. Never fabricate files.
         status, tree = await github_api(
             "GET", f"/repos/{repo_full_name}/git/trees/{branch}?recursive=1", token)
         if status == 200 and isinstance(tree, dict):
             candidates = [str(t.get("path")) for t in tree.get("tree", [])
                           if t.get("type") == "blob"
                           and str(t.get("path", "")).lower().endswith(FRONTEND_EXTS)]
+            candidates.sort(key=lambda p: (
+                1 if is_protected_path(normalize_path(p)) else 0, p))
     written: List[str] = []
     for rel in candidates[:MAX_FILES]:
         norm = normalize_path(rel)

@@ -25,6 +25,10 @@ playwright>=1.42.0
 # local backend and the whole test suite work without it/credentials)
 modal>=1.0
 
+# E2B cloud sandbox backend (only needed when SANDBOX_PROVIDER=e2b;
+# the runner falls back to the local worktree sandbox without it)
+e2b>=1.0
+
 # LLM & AI Clients
 openai>=1.14.0
 httpx>=0.27.0

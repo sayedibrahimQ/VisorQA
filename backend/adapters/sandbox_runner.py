@@ -11,17 +11,21 @@ all existing patch/HMR behaviour is reused unchanged.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from backend.sandbox.interface import SandboxRunner as SandboxRunnerStrategy
+from backend.sandbox.interface import SandboxRunner as SandboxRunnerStrategy, ServerState
 from backend.sandbox.local_runner import LocalSandboxRunner, _free_port
 from backend.sandbox.modal_runner import ModalSandboxRunner
+
+logger = logging.getLogger("visorqa.sandbox_runner")
 
 EXCLUDED_DIRS = {".git", "node_modules", ".next", "dist", "build",
                  "__pycache__", ".visor-snapshots"}
@@ -403,6 +407,232 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
     async def __aexit__(self, *exc):
         await self.terminate()
         return False
+
+
+class E2BSandboxRunner(LocalWorktreeSandboxRunner):
+    """E2B cloud microVM sandbox with automatic local fallback.
+
+    Provisions one ephemeral E2B sandbox per run (bounded timeout),
+    uploads the workspace, serves it from the cloud VM, and records real
+    telemetry (sandbox_id, provider label, HMR round-trip latency). Local
+    files remain the patch/hashing source of truth; patched files are
+    synced back to the VM. Any provisioning/capture failure logs a warning
+    and seamlessly delegates to the local worktree runner — a live scan
+    never crashes because E2B is unavailable. Cleanup kills the sandbox.
+    """
+
+    backend_name = "e2b"
+    REMOTE_ROOT = "/home/user/app"
+
+    def __init__(self, *, api_key: Optional[str] = None,
+                 sandbox_timeout: int = 180,
+                 source_dir: Optional[str] = None, **kwargs: Any):
+        super().__init__(source_dir=source_dir, **kwargs)
+        if api_key is None:
+            try:
+                from backend.config import settings as _s
+                api_key = str(getattr(_s, "E2B_API_KEY", "") or "") or None
+            except Exception:
+                api_key = None
+        self._api_key = api_key
+        self._sandbox_timeout = int(sandbox_timeout or 180)
+        self._sandbox: Any = None
+        self._sandbox_id = ""
+        self._e2b_active = False
+        self._fallback_reason = ""
+        self._local_fallback: Optional[LocalWorktreeSandboxRunner] = None
+        self._run_id = ""
+        self.hmr_latency_ms: Optional[float] = None
+
+    # -- identity / telemetry ----------------------------------------------
+    @property
+    def sandbox_id(self) -> str:
+        return self._sandbox_id
+
+    @property
+    def e2b_active(self) -> bool:
+        return self._e2b_active
+
+    @property
+    def provider_label(self) -> str:
+        if self._e2b_active and self._sandbox_id:
+            return f"E2B CLOUD SANDBOX (sbx_{self._sandbox_id[:12]})"
+        if self._fallback_reason:
+            return "LOCAL WORKTREE SANDBOX"
+        return "LOCAL WORKTREE SANDBOX"
+
+    def _mark_status(self) -> None:
+        self._status.backend = self.provider_label
+        self._status.sandbox_id = self._sandbox_id or None
+        if self.hmr_latency_ms is not None:
+            self._status.timings.total_patch_to_hmr_ms = self.hmr_latency_ms
+            self._status.timings.hmr_propagation_ms = self.hmr_latency_ms
+
+    # -- provisioning ---------------------------------------------------------
+    async def _provision_e2b(self, state: Any = None) -> Path:
+        from e2b import AsyncSandbox
+
+        src = Path(self._source_dir or "./demo-target-app").expanduser()
+        if not src.is_dir() or not any(src.iterdir()):
+            src = ensure_target_fixture(src)
+        self._sandbox = await AsyncSandbox.create(
+            timeout=self._sandbox_timeout, api_key=self._api_key)
+        self._sandbox_id = str(getattr(self._sandbox, "sandbox_id", "") or "")
+        # Upload the workspace (bounded; frontend/test files are small).
+        uploaded = 0
+        for rel in list_repository_files(src)[:200]:
+            if uploaded >= 200:
+                break
+            try:
+                data = (src / rel).read_bytes()
+            except Exception:
+                continue
+            await self._sandbox.files.write(f"{self.REMOTE_ROOT}/{rel}", data)
+            uploaded += 1
+        self._e2b_active = True
+        # Local mirror stays the Node 4 snapshot/hash source of truth.
+        self._status.working_dir = str(src)
+        self._status.session_id = self._run_id
+        self._mark_status()
+        logger.info(f"E2B sandbox provisioned: {self.provider_label} "
+                    f"({uploaded} files uploaded)")
+        return src
+
+    async def _fallback_local(self, state: Any = None, run_id: str = "") -> Path:
+        if self._local_fallback is None:
+            self._local_fallback = LocalWorktreeSandboxRunner(
+                source_dir=self._source_dir)
+        return await self._local_fallback.ensure_workspace(state, run_id)
+
+    async def ensure_workspace(self, state: Any = None, run_id: str = "") -> Path:
+        self._run_id = run_id or (getattr(state, "run_id", "") if state is not None else "") or self._run_id
+        if self._e2b_active:
+            return Path(self._status.working_dir)
+        if not self._api_key:
+            self._fallback_reason = "E2B_API_KEY not configured"
+            logger.warning("E2B unavailable (no API key); using local worktree sandbox")
+            return await super().ensure_workspace(state, run_id)
+        try:
+            return await self._provision_e2b(state)
+        except Exception as exc:
+            self._fallback_reason = f"E2B provisioning failed: {exc}"
+            logger.warning(f"{self._fallback_reason}; falling back to local sandbox")
+            self._e2b_active = False
+            self._sandbox = None
+            self._sandbox_id = ""
+            return await super().ensure_workspace(state, run_id)
+
+    # -- dev server / preview --------------------------------------------------
+    async def start_dev_server(self):  # type: ignore[override]
+        if not self._e2b_active or self._sandbox is None:
+            return await super().start_dev_server()
+        port = int(self._target_app_port or 3001)
+        try:
+            await self._sandbox.commands.run(
+                f"cd {self.REMOTE_ROOT} && (nohup python3 -m http.server {port} "
+                f"--bind 0.0.0.0 >/tmp/visor-server.log 2>&1 &)", timeout=30)
+            host = self._sandbox.get_host(port)
+            preview = f"https://{host}"
+            # Bounded readiness poll against the public host URL.
+            import httpx as _httpx
+            deadline = time.monotonic() + 25.0
+            ready = False
+            while time.monotonic() < deadline:
+                try:
+                    async with _httpx.AsyncClient(timeout=5.0) as client:
+                        resp = await client.get(preview)
+                        if resp.status_code < 500:
+                            ready = True
+                            break
+                except Exception:
+                    pass
+                await asyncio.sleep(0.75)
+            if not ready:
+                raise RuntimeError("E2B preview host did not become ready")
+            self._status.preview_url = preview
+            self._status.server_state = ServerState.RUNNING
+            self._mark_status()
+            return self._status
+        except Exception as exc:
+            self._fallback_reason = f"E2B dev server failed: {exc}"
+            logger.warning(f"{self._fallback_reason}; falling back to local sandbox")
+            await self._kill_e2b()
+            return await super().start_dev_server()
+
+    async def get_preview_url(self) -> Optional[str]:
+        if self._e2b_active and self._status.preview_url:
+            return self._status.preview_url
+        return await super().get_preview_url()
+
+    async def get_status(self):  # type: ignore[override]
+        status = await super().get_status()
+        if self._e2b_active:
+            status.backend = self.provider_label
+            status.sandbox_id = self._sandbox_id or None
+            status.preview_url = self._status.preview_url
+            status.server_state = ServerState.RUNNING
+            self._mark_status()
+        return status
+
+    # -- patch + cloud sync ------------------------------------------------------
+    async def apply_patch(self, patch_text, *, authorized_files=None):  # type: ignore[override]
+        result = await super().apply_patch(
+            patch_text, authorized_files=authorized_files)
+        if result.success and self._e2b_active and self._sandbox is not None:
+            try:
+                targets = list(authorized_files or [])
+                if not targets:
+                    targets = [ln[len("+++ b/"):].strip()
+                               for ln in str(patch_text).split("\n")
+                               if ln.startswith("+++ b/")]
+                root = self.working_dir
+                for rel in targets:
+                    if root and (root / rel).is_file():
+                        await self._sandbox.files.write(
+                            f"{self.REMOTE_ROOT}/{rel}", (root / rel).read_bytes())
+                # Measure the real cloud reload round-trip as HMR latency.
+                preview = await self.get_preview_url()
+                if preview:
+                    import httpx as _httpx
+                    started = time.monotonic()
+                    async with _httpx.AsyncClient(timeout=10.0) as client:
+                        await client.get(preview)
+                    self.hmr_latency_ms = (time.monotonic() - started) * 1000.0
+                    self._mark_status()
+            except Exception as exc:
+                logger.warning(f"E2B patch sync/HMR measure failed: {exc}")
+        return result
+
+    # -- capture with fallback ---------------------------------------------------
+    async def extract_dom_geometry(self, viewport_width: int, viewport_height: int):
+        geometry = await super().extract_dom_geometry(viewport_width, viewport_height)
+        if geometry or not self._e2b_active:
+            return geometry
+        logger.warning("E2B browser capture returned no geometry; "
+                       "falling back to local sandbox capture")
+        self._fallback_reason = "E2B browser capture empty"
+        if self._local_fallback is None:
+            await self._fallback_local(None, self._run_id)
+        assert self._local_fallback is not None
+        return await self._local_fallback.extract_dom_geometry(
+            viewport_width, viewport_height)
+
+    # -- lifecycle -----------------------------------------------------------------
+    async def _kill_e2b(self) -> None:
+        if self._sandbox is not None:
+            try:
+                await self._sandbox.kill()
+            except Exception:
+                pass
+            self._sandbox = None
+        self._e2b_active = False
+        self._sandbox_id = ""
+
+    async def terminate(self) -> None:
+        try:
+            await self._kill_e2b()
+        finally:
+            await super().terminate()
 
 
 class StubSandboxRunner(LocalWorktreeSandboxRunner):

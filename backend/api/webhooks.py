@@ -102,14 +102,30 @@ async def _run_agent_lifecycle_hydrated(state: AgentState, token: str = "") -> N
         if root:
             from pathlib import Path as _Path
 
-            from backend.adapters.sandbox_runner import LocalWorktreeSandboxRunner
+            from backend.adapters.sandbox_runner import (
+                E2BSandboxRunner,
+                LocalWorktreeSandboxRunner,
+            )
+            from backend.config import settings as _settings
+            from backend.sandbox.factory import _resolve_name
 
             source = root
             if not getattr(state, "repo_full_name", "") and not getattr(state, "pr_number", 0):
                 demo_app = _Path(root) / "demo-target-app"
                 if demo_app.is_dir():
                     source = str(demo_app)
-            runner = LocalWorktreeSandboxRunner(source_dir=source)
+            # Provider-selected runner bound to the hydrated workspace:
+            # E2B cloud when configured, automatic local fallback inside
+            # E2BSandboxRunner on any provisioning/capture failure.
+            if _resolve_name(_settings, None) == "e2b":
+                runner = E2BSandboxRunner(
+                    source_dir=source,
+                    api_key=str(getattr(_settings, "E2B_API_KEY", "") or "") or None,
+                    sandbox_timeout=int(
+                        getattr(_settings, "E2B_SANDBOX_TIMEOUT_SECONDS", 180) or 180),
+                )
+            else:
+                runner = LocalWorktreeSandboxRunner(source_dir=source)
             # Provision the per-run workspace, then start the preview
             # server (no FSM node starts it; Sense needs it live).
             try:
