@@ -1,0 +1,132 @@
+"use client";
+
+import React from "react";
+import { useMissionControlStream } from "@/hooks/useMissionControlStream";
+import { LiveTrace } from "@/components/LiveTrace";
+import { PRRunSidebar } from "@/components/mission-control/PRRunSidebar";
+import { FSMOrchestratorBar } from "@/components/mission-control/FSMOrchestratorBar";
+import { ThreeStrikeLoop } from "@/components/mission-control/ThreeStrikeLoop";
+import { getAttemptState } from "@/lib/fsmSelectors";
+
+/**
+ * Mission Control workspace. The active run is focused automatically when a
+ * GitHub webhook PR run arrives over the telemetry socket — no manual trigger.
+ * All children below share this single `useMissionControlStream` subscription;
+ * no second WebSocket is opened.
+ */
+export default function MissionControlPage() {
+  const {
+    runs,
+    activeRun,
+    activeRunId,
+    status,
+    loading,
+    error,
+    reconnectAttempt,
+    focusLatencyMs,
+    selectRun,
+  } = useMissionControlStream();
+
+  return (
+    <main className="min-h-screen bg-canvas text-text-primary">
+      <div className="mx-auto max-w-[1440px] px-4 py-6">
+        <div className="flex items-baseline justify-between gap-4 border-b border-border-subtle pb-4">
+          <div className="min-w-0">
+            <h1 className="font-display text-2xl font-semibold">
+              Mission Control
+            </h1>
+            <p className="mt-1 truncate text-sm text-text-secondary">
+              Live PR telemetry — new webhook runs focus automatically.
+            </p>
+          </div>
+          <div
+            data-testid="connection-status"
+            className="shrink-0 font-mono text-xs text-text-secondary"
+          >
+            {status}
+            {status === "reconnecting" ? ` (retry ${reconnectAttempt})` : ""}
+            {focusLatencyMs !== null
+              ? ` · focus ${focusLatencyMs.toFixed(0)}ms`
+              : ""}
+          </div>
+        </div>
+
+        <div className="mt-5 grid min-w-0 gap-4 md:grid-cols-[240px_minmax(0,1fr)] lg:grid-cols-[292px_minmax(0,1fr)]">
+          <PRRunSidebar
+            runs={runs}
+            activeRunId={activeRunId}
+            loading={loading}
+            error={error}
+            connectionStatus={status}
+            onSelect={(id) => selectRun(id)}
+            className="min-w-0"
+          />
+
+          <section aria-label="Active workspace" aria-live="polite" className="min-w-0">
+            {activeRun ? (
+              <div data-testid="active-run" data-run-id={activeRun.id} className="min-w-0">
+                <div className="flex flex-wrap items-baseline justify-between gap-3">
+                  <h2 className="min-w-0 truncate text-sm font-semibold text-text-secondary">
+                    Active workspace — {activeRun.repo_name} PR #
+                    {activeRun.pr_number}
+                  </h2>
+                  <ThreeStrikeLoop attempt={getAttemptState(activeRun)} />
+                </div>
+                <div className="mt-3">
+                  <FSMOrchestratorBar run={activeRun} />
+                </div>
+                <div className="mt-4">
+                  <LiveTrace
+                    currentStep={activeRun.current_step}
+                    strikes={activeRun.strikes}
+                  />
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-2 font-mono text-xs text-text-secondary sm:grid-cols-3">
+                  <div>
+                    <dt>Branch</dt>
+                    <dd className="truncate text-text-primary">{activeRun.branch}</dd>
+                  </div>
+                  <div>
+                    <dt>Commit</dt>
+                    <dd className="truncate text-text-primary">
+                      {activeRun.commit_sha}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd className="text-text-primary">{activeRun.status}</dd>
+                  </div>
+                  <div>
+                    <dt>Anomalies</dt>
+                    <dd className="text-text-primary">
+                      {activeRun.anomalies_count ?? 0}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Attempt</dt>
+                    <dd className="text-text-primary">
+                      {activeRun.strikes}/3
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Updated</dt>
+                    <dd className="truncate text-text-primary">
+                      {activeRun.updated_at ?? "—"}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            ) : (
+              <div className="min-w-0">
+                <FSMOrchestratorBar run={null} />
+                <p data-testid="no-active-run" className="mt-4 text-sm text-text-secondary">
+                  No active run. New PR runs appear here automatically.
+                </p>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
