@@ -51,10 +51,21 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Middleware allowing Next.js frontend communication
+# CORS Middleware allowing Next.js frontend communication (both production domain and local dev)
+cors_origins = [
+    "https://visorqa.sayedibrahim.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://16.170.168.155:8000",
+    "http://16.170.168.155:3000",
+]
+if settings.FRONTEND_URL and settings.FRONTEND_URL not in cors_origins:
+    cors_origins.append(settings.FRONTEND_URL.rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Open for development
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|16\.170\.168\.155|.*\.sayedibrahim\.com|.*\.vercel\.app)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

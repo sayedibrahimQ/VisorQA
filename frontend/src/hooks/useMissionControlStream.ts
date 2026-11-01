@@ -45,6 +45,15 @@ const DEFAULT_WS_PATH = "/ws/mission-control";
 
 export function resolveApiBase(explicit?: string): string {
   if (explicit !== undefined) return explicit.replace(/\/$/, "");
+  // In a browser running on HTTPS, avoid mixed content (blocked by browser).
+  // If the configured API URL is insecure HTTP, fall back to same-origin relative path ""
+  // so Next.js rewrites proxy the requests securely over HTTPS.
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    const env = process.env.NEXT_PUBLIC_API_URL;
+    if (!env || /^http:\/\//i.test(env)) {
+      return "";
+    }
+  }
   const env =
     typeof process !== "undefined"
       ? process.env.NEXT_PUBLIC_API_URL
