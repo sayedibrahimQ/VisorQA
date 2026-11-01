@@ -15,8 +15,10 @@ from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from backend.config import settings
 from backend.core.state import AgentState
 
 logger = logging.getLogger("visorqa.ws")
@@ -309,7 +311,7 @@ async def ws_broadcast(event_type: str, state: Any) -> float:
 
 @router.get("/runs")
 async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Lists recent PR QA Runs from DB + artifact registry, demo fallback last.
+    """Lists recent PR QA Runs from DB + artifact registry (real runs only).
 
     With `?repo={owner}/{repo}` the result is strictly scoped to that
     repository (no demo fallback, no cross-repo leakage).
@@ -339,14 +341,8 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Could not load runs from database: {e}")
 
-    # Artifact-registry runs (seeded + live-persisted) merge without dupes.
-    # Live mode (GitHub auth configured): seed/demo records never pollute.
-    try:
-        from backend.config import settings as _settings
-        _live_mode = bool((_settings.GITHUB_PAT or "").strip()
-                          or (_settings.GITHUB_APP_ID or "").strip())
-    except Exception:
-        _live_mode = False
+    # Artifact-registry runs (live-persisted only) merge without dupes.
+    # Legacy seed/demo records and PR #0 placeholders are never listed.
     try:
         from backend.core.artifacts import ArtifactStore
         known = {r["id"] for r in results}
@@ -354,7 +350,7 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
             if rec.get("id") in known:
                 continue
             rec_id = str(rec.get("id") or "")
-            if _live_mode and (rec_id.startswith("run-seed-") or rec_id == "run-demo-42"):
+            if rec_id.startswith("run-seed-") or rec_id == "run-demo-42":
                 continue
             rec_repo = rec.get("repo_full_name") or rec.get("repo_name") or ""
             if repo_filter and rec_repo != repo_filter:
@@ -450,6 +446,51 @@ class CreateRunRequest(BaseModel):
     anomalies: List[Dict[str, Any]] = []
 
 
+async def resolve_branch_pr(repo_full_name: str, branch: str,
+                            token: str) -> Dict[str, Any]:
+    """Real PR/commit identity for a branch scan without a PR number.
+
+    Returns {"pr_number", "pr_title"} from the open PR whose head is the
+    branch, else the branch tip commit message. Empty when GitHub has
+    neither — callers label the run as a branch scan, never PR #0.
+    """
+    out: Dict[str, Any] = {"pr_number": 0, "pr_title": ""}
+    if not repo_full_name or "/" not in repo_full_name or not token:
+        return out
+    from backend.api.auth import github_api
+
+    candidates = [token]
+    pat = (settings.GITHUB_PAT or "").strip()
+    if pat and pat not in candidates:
+        candidates.append(pat)
+    owner = repo_full_name.split("/")[0]
+    for tok in candidates:
+        try:
+            status, body = await github_api(
+                "GET",
+                f"/repos/{repo_full_name}/pulls?head={owner}:{branch}&state=open&per_page=1",
+                tok)
+        except Exception:
+            continue
+        if status == 200 and isinstance(body, list) and body:
+            out["pr_number"] = int(body[0].get("number") or 0)
+            out["pr_title"] = str(body[0].get("title") or "")
+            if out["pr_number"]:
+                return out
+    for tok in candidates:
+        try:
+            status, body = await github_api(
+                "GET", f"/repos/{repo_full_name}/commits/{branch}", tok)
+        except Exception:
+            continue
+        if status == 200 and isinstance(body, dict):
+            msg = str(((body.get("commit") or {}).get("message") or "")).splitlines()
+            if msg:
+                out["pr_title"] = msg[0]
+                return out
+    return out
+
+
 @router.post("/runs", status_code=202)
 async def create_run(payload: CreateRunRequest,
                      background_tasks: BackgroundTasks,
@@ -464,12 +505,31 @@ async def create_run(payload: CreateRunRequest,
     """
     from uuid import uuid4 as _uuid4
 
+    # Branch scan without a PR number: resolve the real open PR (or the
+    # branch tip commit message) so no run is ever a PR #0 placeholder.
+    pr_number = payload.pr_number
+    pr_title = ""
+    repo_full_name = payload.repo_full_name or payload.repo_name
+    if not pr_number and repo_full_name:
+        try:
+            from backend.api.auth import resolve_github_token
+
+            resolved = await resolve_github_token(request)
+            found = await resolve_branch_pr(
+                repo_full_name, payload.branch, resolved[0] if resolved else "")
+            pr_number = int(found.get("pr_number") or 0)
+            pr_title = str(found.get("pr_title") or "")
+        except Exception as exc:
+            logger.warning(f"Branch PR resolution failed: {exc}")
+
     run_id = f"run-{_uuid4().hex[:12]}"
     record: Dict[str, Any] = {
         "id": run_id,
-        "pr_number": payload.pr_number,
-        "repo_name": payload.repo_full_name or payload.repo_name,
-        "repo_full_name": payload.repo_full_name or payload.repo_name,
+        "pr_number": pr_number,
+        "pr_title": pr_title,
+        "display_label": f"PR #{pr_number}" if pr_number else f"Branch: {payload.branch}",
+        "repo_name": repo_full_name,
+        "repo_full_name": repo_full_name,
         "branch": payload.branch,
         "commit_sha": payload.commit_sha,
         "status": "QUEUED",
@@ -490,7 +550,7 @@ async def create_run(payload: CreateRunRequest,
         async with AsyncSessionLocal() as session:
             repo = RunRepository(session)
             created = await repo.create_run(
-                pr_number=payload.pr_number,
+                pr_number=pr_number,
                 repo_name=record["repo_name"],
                 branch=payload.branch,
                 commit_sha=payload.commit_sha or "HEAD",
@@ -507,32 +567,21 @@ async def create_run(payload: CreateRunRequest,
         try:
             from backend.api.auth import resolve_github_token
             from backend.api.webhooks import _run_agent_lifecycle_hydrated
-            from backend.core.state import AgentState, Anomaly, DefectType
+            from backend.core.state import AgentState, Anomaly
 
+            # Only caller-supplied anomalies are seeded. A scan without
+            # them senses the real target app; nothing is fabricated.
             seeded_anomalies = []
             for raw in payload.anomalies or []:
                 try:
                     seeded_anomalies.append(Anomaly(**raw))
                 except Exception:
                     continue
-            if not seeded_anomalies:
-                seeded_anomalies = [
-                    Anomaly(
-                        element_id="visor-el-01",
-                        defect_type=DefectType.OCCLUSION,
-                        bounding_box={"x": 0.0, "y": 0.0, "width": 375.0, "height": 60.0},
-                        visibility_ratio=0.12,
-                        iou_score=0.92,
-                        bleed_px=14.0,
-                        viewport="375px",
-                        secondary_el_id="visor-el-02",
-                    )
-                ]
             agent_state = AgentState(
                 run_id=run_id,
                 repo_full_name=record["repo_name"],
                 repo_name=record["repo_name"],
-                pr_number=payload.pr_number,
+                pr_number=pr_number,
                 branch=payload.branch,
                 commit_sha=payload.commit_sha or "",
                 anomalies=seeded_anomalies,
@@ -544,7 +593,8 @@ async def create_run(payload: CreateRunRequest,
             dispatched = True
         except Exception as e:
             logger.warning(f"Could not dispatch run {run_id}: {e}")
-    return {"id": run_id, "status": "QUEUED", "pr_number": payload.pr_number,
+    return {"id": run_id, "status": "QUEUED", "pr_number": pr_number, "pr_title": pr_title,
+            "display_label": record["display_label"],
             "repo_name": record["repo_name"], "dispatched": dispatched}
 
 
@@ -576,8 +626,8 @@ async def get_run_artifacts(run_id: str) -> Dict[str, Any]:
 async def get_run_details(run_id: str) -> Dict[str, Any]:
     """Rich run details: baseline + ordered strike telemetry (Workstream 1).
 
-    Sources, in order: Postgres (when reachable), the artifact registry
-    (seeded + live-persisted runs), then the deterministic demo fallback.
+    Sources, in order: Postgres (when reachable), then the artifact
+    registry (live-persisted runs only). Unknown ids return 404.
     """
     from backend.core.artifacts import ArtifactStore, build_run_payload
 
@@ -665,34 +715,9 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
             record.get("artifacts", []) or [],
         )
 
-    # Fallback to demo run details (same rich shape, no artifacts on disk)
-    demo_run: Dict[str, Any] = {
-        "id": run_id,
-        "pr_number": 42,
-        "repo_name": "sayedibrahimQ/VisorQA",
-        "repo_full_name": "sayedibrahimQ/VisorQA",
-        "branch": "fix/checkout-banner",
-        "commit_sha": "a1b2c3d",
-        "status": "RUNNING",
-        "current_step": "1.SENSE",
-        "max_attempts": 3,
-        "target_files": [],
-    }
-    demo_anomalies = [
-        {
-            "id": "anom-01",
-            "element_id": "visor-el-04",
-            "defect_type": "OCCLUSION",
-            "visibility_ratio": 0.62,
-            "iou_score": 0.0,
-            "bleed_px": 0.0,
-            "bounding_box": {"x": 12, "y": 80, "width": 350, "height": 60},
-            "viewport": "375px",
-            "attempt_num": 0,
-            "status": "DETECTED",
-        }
-    ]
-    return build_run_payload(demo_run, demo_anomalies, [], [])
+    # Honest miss: no DB row and no registry record means the run does
+    # not exist. Never invent a demo run.
+    return JSONResponse({"detail": f"run {run_id} not found"}, status_code=404)
 
 
 # -----------------------------------------------------------------------------

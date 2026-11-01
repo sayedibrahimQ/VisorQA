@@ -30,18 +30,7 @@ async def lifespan(app: FastAPI):
         print("✅ Database tables successfully verified/initialized.")
     except Exception as e:
         print(f"⚠️ Notice: Database initialization deferred or waiting on DB: {e}")
-    # Workstream 1: deterministic seed runs when the registry is empty.
-    # Live mode (GitHub auth configured): never inject demo runs.
-    try:
-        live_mode = bool((settings.GITHUB_PAT or "").strip()
-                         or (settings.GITHUB_APP_ID or "").strip())
-        if getattr(settings, "SEED_DEMO_RUNS", True) and not live_mode:
-            from backend.db.seed import seed_if_empty
-            seeded = seed_if_empty()
-            if seeded:
-                print(f"🌱 Seeded {seeded} canonical artifact runs.")
-    except Exception as e:
-        print(f"⚠️ Notice: artifact seeding deferred: {e}")
+    # No seeded/demo runs: the registry only ever holds real executions.
     yield
 
 
