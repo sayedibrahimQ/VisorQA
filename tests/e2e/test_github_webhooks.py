@@ -140,8 +140,19 @@ async def test_supported_pull_request_synchronize_and_reopened():
 
 
 @pytest.mark.asyncio
-async def test_supported_push_event():
-    """Requirement 3: Valid push events are accepted and branch parsed correctly."""
+async def test_supported_push_event(monkeypatch):
+    """Requirement 3: Valid push events are accepted and branch parsed correctly.
+
+    Push carries no PR number, so the handler resolves the branch's open
+    PR from GitHub (mocked here); the run is created for that real PR,
+    never as a PR #0 placeholder.
+    """
+    import backend.api.routes_ws as routes_ws
+
+    async def fake_resolve(repo_full_name, branch, token):
+        return {"pr_number": 42, "pr_title": "fix responsive layout"}
+
+    monkeypatch.setattr(routes_ws, "resolve_branch_pr", fake_resolve)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         payload = {
@@ -155,6 +166,7 @@ async def test_supported_push_event():
         assert resp.status_code == 202
         data = resp.json()
         assert data["status"] == "accepted"
+        assert data["pr_number"] == 42
         assert data["branch"] == "feature/responsive-fix"
         assert data["commit_sha"] == "deadbeef9999"
 

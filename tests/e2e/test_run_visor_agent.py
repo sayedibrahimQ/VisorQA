@@ -30,6 +30,21 @@ def occluded():
     )
 
 
+class CleanCaptureSandbox:
+    """Test-provided capture evidence: one fully visible element, both viewports."""
+
+    async def extract_dom_geometry(self, width, height):
+        return [{
+            "element_id": "visor-el-01", "visibility_ratio": 1.0, "v_r": 1.0,
+            "iou_score": 0.0, "bleed_px": 0.0,
+            "bounding_box": {"x": 10.0, "y": 10.0, "width": 100.0, "height": 40.0},
+            "viewport": f"{width}px",
+        }]
+
+    async def capture_screenshot(self, width, height):
+        return b""
+
+
 async def test_agent_state_jira_defaults_and_mutable_isolation():
     a, b = make_state(), make_state()
     assert a.attempt == 0 and a.max_attempts == 3
@@ -47,7 +62,7 @@ async def test_clean_run_resolves_without_attempts():
     async def broadcast(envelope):
         events.append(envelope)
 
-    final = await run_visor_agent(make_state(), broadcast)
+    final = await run_visor_agent(make_state(), broadcast, sandbox_runner=CleanCaptureSandbox())
     assert final.is_resolved is True
     assert final.status == RunStatus.RESOLVED
     assert final.current_step == FSMStep.VERIFY
@@ -66,7 +81,7 @@ async def test_healing_loop_resolves_on_first_attempt_with_stub_adapters():
     async def broadcast(envelope):
         events.append(envelope)
 
-    final = await run_visor_agent(make_state(anomalies=[occluded()]), broadcast)
+    final = await run_visor_agent(make_state(anomalies=[occluded()]), broadcast, sandbox_runner=CleanCaptureSandbox())
     assert final.is_resolved is True
     assert final.attempt == 1
     assert final.target_files == ["src/components/PromoBanner.tsx"]
@@ -97,7 +112,7 @@ async def test_three_strike_loop_halts_and_preserves_best_patch(monkeypatch):
     async def broadcast(envelope):
         events.append(envelope)
 
-    final = await run_visor_agent(make_state(anomalies=[occluded()]), broadcast)
+    final = await run_visor_agent(make_state(anomalies=[occluded()]), broadcast, sandbox_runner=CleanCaptureSandbox())
     assert final.is_resolved is False
     assert final.status == RunStatus.FAILED
     assert final.attempt == 3 and len(final.attempts) == 3

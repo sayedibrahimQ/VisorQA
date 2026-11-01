@@ -423,12 +423,16 @@ async def test_fenced_diff_applied_and_handed_to_node5(tmp_path):
     assert out.target_files == [TARGET]
     assert out.is_resolved is False  # Node 4 never marks verified
 
-    # Node 5 consumes the handoff through its existing contract.
+    # Node 5 consumes the handoff through its existing contract. With a
+    # quiet sandbox there is no real re-capture evidence, so verification
+    # must NOT pass: no fabricated metrics, no resolved state, no
+    # best-patch promotion (honest-verification contract).
     verified = await verify_with_sam(
         out, sandbox_runner=_QuietSandbox(), sam_client=_QuietSam())
     assert verified.attempts[-1].patch_diff == GOOD_DIFF
-    assert verified.best_patch == GOOD_DIFF
-    assert verified.is_resolved is True
+    assert verified.best_patch == ""
+    assert verified.is_resolved is False
+    assert verified.attempts[-1].verification_status == "verification_invalid"
 
 
 async def test_rejected_patch_never_looks_applied(tmp_path):

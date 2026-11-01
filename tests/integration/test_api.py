@@ -25,24 +25,30 @@ async def test_api_runs_list():
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        assert len(data) >= 1
-        assert "pr_number" in data[0]
+        # Honest listing: only real runs (registry is isolated/empty in
+        # tests, so zero is valid); any listed run carries its real PR.
+        if data:
+            assert "pr_number" in data[0]
 
 @pytest.mark.asyncio
 async def test_api_run_details():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # The demo run is purged: unknown ids are an honest 404.
         response = await client.get("/api/runs/run-demo-42")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == "run-demo-42"
-        assert "anomalies" in data
+        assert response.status_code == 404
 
 @pytest.mark.asyncio
 async def test_github_webhook_hmac_valid():
+    from backend.db.models import save_watched_repository
+    save_watched_repository("org/repo", default_branch="main", webhook_active=True, auto_heal_enabled=True)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        payload = {"action": "opened", "pull_request": {"number": 101}}
+        payload = {
+            "action": "opened",
+            "pull_request": {"number": 101},
+            "repository": {"full_name": "org/repo"},
+        }
         body = json.dumps(payload).encode()
         
         signature = "sha256=" + hmac.new(

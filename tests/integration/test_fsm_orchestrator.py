@@ -2,6 +2,21 @@ import pytest
 from backend.core.state import AgentState, FSMStep, RunStatus, Anomaly, SelfHealingAttempt, DefectType
 from backend.core.orchestrator import VisorOrchestrator
 
+
+class CleanCaptureSandbox:
+    """Test-provided capture evidence: one fully visible element, both viewports."""
+
+    async def extract_dom_geometry(self, width, height):
+        return [{
+            "element_id": "visor-el-01", "visibility_ratio": 1.0, "v_r": 1.0,
+            "iou_score": 0.0, "bleed_px": 0.0,
+            "bounding_box": {"x": 10.0, "y": 10.0, "width": 100.0, "height": 40.0},
+            "viewport": f"{width}px",
+        }]
+
+    async def capture_screenshot(self, width, height):
+        return b""
+
 @pytest.mark.asyncio
 async def test_orchestrator_clean_run():
     state = AgentState(
@@ -11,7 +26,7 @@ async def test_orchestrator_clean_run():
         branch="main",
         commit_sha="c0ffee"
     )
-    orchestrator = VisorOrchestrator()
+    orchestrator = VisorOrchestrator(sandbox_runner=CleanCaptureSandbox())
     final_state = await orchestrator.execute_run(state)
     assert final_state.current_step == FSMStep.VERIFY
     assert final_state.status == RunStatus.RESOLVED
