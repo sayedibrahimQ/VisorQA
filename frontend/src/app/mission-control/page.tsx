@@ -222,9 +222,9 @@ export default function MissionControlPage() {
   }
 
   return (
-    <main className="min-h-screen bg-canvas text-text-primary">
-      <div className="mx-auto max-w-[1440px] px-4 py-6">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-4">
+    <main className="min-h-screen bg-canvas text-text-primary md:h-screen md:overflow-hidden md:flex md:flex-col">
+      <div className="mx-auto w-full max-w-[1680px] p-4 sm:p-6 flex flex-col flex-1 min-h-0">
+        <div className="shrink-0 flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-4">
           <div className="min-w-0">
             <h1 className="font-display text-2xl font-semibold">
               Mission Control
@@ -265,23 +265,25 @@ export default function MissionControlPage() {
         </div>
 
         {!selectedRepo ? (
-          <p data-testid="repo-onboarding" className="mt-4 rounded-md border border-border-subtle bg-surface px-3 py-2.5 text-sm text-text-secondary">
+          <p data-testid="repo-onboarding" className="shrink-0 mt-4 rounded-md border border-border-subtle bg-surface px-3 py-2.5 text-sm text-text-secondary">
             Select one of your GitHub repositories (top right) to scope pull
             requests, runs, telemetry, and actions to it.
           </p>
         ) : null}
 
-        <div className="mt-5 grid min-w-0 gap-4 md:grid-cols-[240px_minmax(0,1fr)] lg:grid-cols-[292px_minmax(0,1fr)] xl:grid-cols-[292px_minmax(0,1fr)_380px]">
-          <div className="min-w-0 space-y-4">
+        <div className="mt-5 grid min-w-0 flex-1 gap-4 md:grid-cols-[240px_minmax(0,1fr)] lg:grid-cols-[292px_minmax(0,1fr)] xl:grid-cols-[292px_minmax(0,1fr)_380px] md:min-h-0 md:h-full overflow-hidden">
+          <div className="min-w-0 space-y-4 md:h-full md:min-h-0 flex flex-col overflow-hidden">
             {selectedRepo ? (
               <section
                 aria-label="Repository pull requests"
                 data-testid="repo-pulls"
-                className="rounded-md border border-border-subtle bg-surface-subtle p-3"
+                className="shrink-0 flex flex-col rounded-md border border-border-subtle bg-surface-subtle p-3 max-h-[300px] overflow-hidden"
               >
-                <h2 className="font-display text-sm font-semibold text-text-primary">
-                  {selectedRepo} Pull Requests
-                </h2>
+                <div className="shrink-0 flex items-baseline justify-between gap-2">
+                  <h2 className="font-display text-sm font-semibold text-text-primary truncate">
+                    {selectedRepo} Pull Requests
+                  </h2>
+                </div>
                 {pullsError ? (
                   <p role="alert" className="mt-2 text-xs text-defect-crimson">{pullsError}</p>
                 ) : pulls.length === 0 ? (
@@ -289,7 +291,7 @@ export default function MissionControlPage() {
                     No pull requests found for this repository yet. Scan a branch below to start a run.
                   </p>
                 ) : (
-                  <ul className="mt-2 space-y-2">
+                  <ul className="mt-2 space-y-2 flex-1 min-h-0 overflow-y-auto pr-1">
                     {pulls.map((pr) => {
                       const match = scopedRuns.find((r) => r.pr_number === pr.number);
                       return (
@@ -327,7 +329,7 @@ export default function MissionControlPage() {
                   </ul>
                 )}
                 {branches.length > 0 ? (
-                  <div className="mt-3 flex items-center gap-1.5">
+                  <div className="shrink-0 mt-2.5 flex items-center gap-1.5 border-t border-border-subtle/60 pt-2">
                     <select
                       data-testid="branch-select"
                       aria-label="Branch to scan"
@@ -365,11 +367,11 @@ export default function MissionControlPage() {
               error={error}
               connectionStatus={status}
               onSelect={(id) => selectRun(id)}
-              className="min-w-0"
+              className="min-w-0 flex-1 min-h-0 flex flex-col overflow-hidden"
             />
           </div>
 
-          <section aria-label="Active workspace" aria-live="polite" className="min-w-0">
+          <section aria-label="Active workspace" aria-live="polite" className="min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:pr-2">
             {activeRun ? (
               <div data-testid="active-run" data-run-id={activeRun.id} className="min-w-0">
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -485,7 +487,7 @@ export default function MissionControlPage() {
             aria-label="Telemetry inspector drawer"
             data-testid="telemetry-drawer"
             data-width="380px"
-            className="min-w-0"
+            className="min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:pr-1"
           >
             <div className="space-y-5 rounded-md border border-border-subtle bg-surface-subtle p-3">
               <MathTrapScorecard

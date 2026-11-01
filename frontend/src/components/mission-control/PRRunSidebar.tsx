@@ -137,7 +137,7 @@ export function PRRunSidebar({
   const showEmpty = !loading && runs.length === 0 && !error;
 
   const body = (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {error ? (
         <p
           data-testid="sidebar-error"
@@ -239,11 +239,11 @@ export function PRRunSidebar({
         data-testid="pr-run-sidebar"
         data-open={open ? "true" : "false"}
         className={cn(
-          "min-h-0 flex-col rounded-md border border-border-subtle bg-surface-subtle md:flex md:h-full",
+          "min-h-0 flex-col rounded-md border border-border-subtle bg-surface-subtle md:flex md:h-full overflow-hidden",
           open ? "mt-2 flex max-h-[60vh]" : "hidden",
         )}
       >
-        <div className="hidden items-baseline justify-between border-b border-border-subtle px-3 py-2.5 md:flex">
+        <div className="hidden shrink-0 items-baseline justify-between border-b border-border-subtle px-3 py-2.5 md:flex">
           <h2 className="font-display text-sm font-semibold text-text-primary">
             PR Runs
           </h2>
