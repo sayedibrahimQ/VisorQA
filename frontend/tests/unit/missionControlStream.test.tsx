@@ -350,6 +350,34 @@ describe("useMissionControlStream", () => {
     expect(result.current.activeRunId).toBe("run-c");
   });
 
+  it("17. polls /api/runs while reconnecting so updates keep flowing", async () => {
+    const { result } = renderStream({
+      baseBackoffMs: 60000,
+      maxBackoffMs: 60000,
+      pollIntervalMs: 20,
+    });
+    await waitForOpenSockets(1);
+    const callsBefore = fetchCalls.length;
+    act(() => {
+      MockWebSocket.instances[0].serverCloseUnexpectedly();
+    });
+    await waitFor(() => expect(result.current.status).toBe("reconnecting"));
+    await waitFor(() => expect(fetchCalls.length).toBeGreaterThan(callsBefore + 1), {
+      timeout: 5000,
+    });
+  });
+
+  it("18. scopes REST hydration to the watched repo", async () => {
+    renderStream({ repo: "sayedibrahimQ/BM_Project" });
+    await waitFor(() =>
+      expect(
+        fetchCalls.some((u) =>
+          u.includes("/api/runs?repo=sayedibrahimQ%2FBM_Project"),
+        ),
+      ).toBe(true),
+    );
+  });
+
   it("16. focus latency is under 1.2s", async () => {
     const { result } = renderStream();
     await waitForOpenSockets(1);

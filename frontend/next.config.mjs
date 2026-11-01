@@ -8,8 +8,12 @@ const backendUrl = (
 const nextConfig = {
   reactStrictMode: true,
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "http://16.170.168.155:8000",
-    NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || "ws://16.170.168.155:8000",
+    // Default to same-origin (empty) so production HTTPS pages call /api
+    // and /ws through the rewrites below instead of baking an insecure
+    // http:// / ws:// backend address into the bundle (mixed content).
+    // Explicit env values (e.g. a wss:// endpoint) still win.
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "",
+    NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || "",
   },
   async rewrites() {
     return [

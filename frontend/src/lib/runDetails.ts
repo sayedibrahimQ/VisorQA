@@ -90,21 +90,6 @@ function elementsForAttempt(attempt: AttemptTelemetry, viewport: "mobile" | "des
       maskState: maskUrl ? "available" : "unavailable",
     });
   }
-  if (out.length === 0 && viewport === "mobile") {
-    out.push({
-      id: "visor-el-04",
-      box: { x: 14.0, y: 212.0, width: 346.0, height: 60.0 },
-      defectType: "OCCLUSION",
-      vr: 0.62,
-      iou: 0.0,
-      deltaX: 0.0,
-      status: "vr_below_0.85",
-      masks: maskUrl
-        ? [{ kind: "image", url: maskUrl, width: spec.width, height: spec.height }]
-        : [],
-      maskState: maskUrl ? "available" : "unavailable",
-    });
-  }
   return out;
 }
 
@@ -158,11 +143,11 @@ export function stageForAttempt(
           observed: patch.hmr_status === "observed" || patch.sandbox_phase === "hmr_observed" || patch.build_status === "success",
           phase: patch.sandbox_phase,
           status: patch.hmr_status || (patch.build_status === "success" ? "observed" : "pending"),
-          latencyMs: patch.hmr_latency_ms ?? 18.5,
+          latencyMs: patch.hmr_latency_ms ?? null,
         }
       : null,
-    sandboxProvider: patch?.sandbox_provider ?? (details.is_resolved ? "Local Worktree (git worktree)" : null),
-    hmrLatencyMs: patch?.hmr_latency_ms ?? 18.5,
+    sandboxProvider: patch?.sandbox_provider ?? null,
+    hmrLatencyMs: patch?.hmr_latency_ms ?? null,
   };
 }
 
@@ -270,8 +255,7 @@ export function inspectorForAttempt(details: RunDetails, attemptNumber: number):
   const attempt = attemptByNumber(details, attemptNumber) ?? details.attempts[0];
   const patch = attempt?.patch_telemetry || details.attempts.find((a) => a.patch_telemetry)?.patch_telemetry;
   const feedback = attempt?.verification_feedback;
-  const isResolved = details.is_resolved || details.status === "RESOLVED";
-  const buildStatus = patch?.build_status ?? (isResolved ? "success" : "unavailable");
+  const buildStatus = patch?.build_status ?? "unavailable";
   return {
     repairSpec: attempt?.repair_spec ?? details.attempts.find((a) => a.repair_spec)?.repair_spec ?? null,
     repairSpecSource: attempt?.repair_spec
@@ -279,11 +263,11 @@ export function inspectorForAttempt(details: RunDetails, attemptNumber: number):
       : null,
     diff: attempt?.unified_diff ?? patch?.unified_diff ?? null,
     diffSource: patch ? `Attempt ${attempt?.attempt_number ?? 1} · Node 4` : null,
-    diffApplied: patch ? patch.applied_cleanly : (isResolved ? true : null),
+    diffApplied: patch ? patch.applied_cleanly : null,
     build: BUILD_MAP[buildStatus] ?? "unavailable",
     buildDetail: patch
-      ? `Sandbox ${patch.sandbox_provider ?? "Local Worktree (git worktree)"} · phase ${patch.sandbox_phase ?? "hmr_observed"}`
-      : (isResolved ? "Sandbox Local Worktree · phase hmr_observed" : null),
+      ? `Sandbox ${patch.sandbox_provider ?? "unknown"} · phase ${patch.sandbox_phase ?? "unknown"}`
+      : null,
     integrity: patch
       ? {
           diffSha256: patch.diff_sha256,
@@ -293,11 +277,11 @@ export function inspectorForAttempt(details: RunDetails, attemptNumber: number):
       : null,
     guardrails: patch
       ? {
-          br2UiLocked: patch.guardrails?.br2_ui_locked ?? (isResolved ? true : null),
-          br3DesktopPreserved: patch.guardrails?.br3_desktop_preserved ?? (isResolved ? true : null),
-          br4NoHacks: patch.guardrails?.br4_no_hacks ?? (isResolved ? true : null),
+          br2UiLocked: patch.guardrails?.br2_ui_locked ?? null,
+          br3DesktopPreserved: patch.guardrails?.br3_desktop_preserved ?? null,
+          br4NoHacks: patch.guardrails?.br4_no_hacks ?? null,
         }
-      : (isResolved ? { br2UiLocked: true, br3DesktopPreserved: true, br4NoHacks: true } : null),
-    decision: feedback?.strike_decision ?? (isResolved ? "RESOLVED" : null),
+      : null,
+    decision: feedback?.strike_decision ?? null,
   };
 }

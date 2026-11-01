@@ -36,9 +36,11 @@ export interface MissionControlStream {
 export interface StreamOptions {
   apiBase?: string;
   wsPath?: string;
+  repo?: string;
   maxBackoffMs?: number;
   baseBackoffMs?: number;
   heartbeatMs?: number;
+  pollIntervalMs?: number;
 }
 
 const DEFAULT_WS_PATH = "/ws/mission-control";
@@ -68,6 +70,22 @@ export function resolveWsUrl(apiBase: string, wsPath: string): string {
   if (/^https?:\/\//i.test(apiBase)) {
     return `${apiBase.replace(/^http/i, "ws").replace(/\/$/, "")}${wsPath}`;
   }
+  // Relative/same-origin API (Next.js rewrites): an explicitly configured
+  // secure WS endpoint wins, an insecure ws:// endpoint must never be
+  // used from an HTTPS page (browsers block it as mixed content), and
+  // otherwise the socket follows the page origin so https:// pages get
+  // wss:// through the same proxy that serves /api.
+  const envWs = (
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WS_URL : undefined
+  )?.replace(/\/$/, "");
+  const onHttps =
+    typeof window !== "undefined" && window.location.protocol === "https:";
+  if (envWs && /^wss:\/\//i.test(envWs)) {
+    return `${envWs}${wsPath}`;
+  }
+  if (envWs && /^ws:\/\//i.test(envWs) && !onHttps) {
+    return `${envWs}${wsPath}`;
+  }
   if (typeof window !== "undefined") {
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     return `${scheme}://${window.location.host}${wsPath}`;
@@ -93,6 +111,7 @@ class StreamHub {
   private socket: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
   private hydrateController: AbortController | null = null;
   private status: ConnectionStatus = "connecting";
   private loading = true;
@@ -105,8 +124,9 @@ class StreamHub {
     key: string,
     private apiBase: string,
     private wsUrl: string,
+    private repo: string | undefined,
     private opts: Required<
-      Pick<StreamOptions, "maxBackoffMs" | "baseBackoffMs" | "heartbeatMs">
+      Pick<StreamOptions, "maxBackoffMs" | "baseBackoffMs" | "heartbeatMs" | "pollIntervalMs">
     >,
   ) {
     this.key = key;
@@ -180,6 +200,7 @@ class StreamHub {
     this.connectEpoch += 1;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.stopPolling();
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
     this.hydrateController?.abort();
@@ -212,7 +233,10 @@ class StreamHub {
     this.loading = true;
     this.emitMeta();
     try {
-      const res = await fetch(`${this.apiBase}/api/runs`, {
+      const runsUrl = this.repo
+        ? `${this.apiBase}/api/runs?repo=${encodeURIComponent(this.repo)}`
+        : `${this.apiBase}/api/runs`;
+      const res = await fetch(runsUrl, {
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`GET /api/runs failed: ${res.status}`);
@@ -250,6 +274,7 @@ class StreamHub {
     ws.onopen = () => {
       if (this.closed || epoch !== this.connectEpoch) return;
       this.reconnectAttempt = 0;
+      this.stopPolling();
       this.setStatus("open");
       this.startHeartbeat();
     };
@@ -289,11 +314,27 @@ class StreamHub {
     }, this.opts.heartbeatMs);
   }
 
+  // While the socket is reconnecting (e.g. a proxy that cannot upgrade
+  // wss://), keep the board live with HTTP polling of /api/runs so new
+  // webhook runs still arrive and auto-focus.
+  private startPolling(): void {
+    if (this.pollTimer || this.opts.pollIntervalMs <= 0) return;
+    this.pollTimer = setInterval(() => {
+      if (!this.closed) void this.hydrate();
+    }, this.opts.pollIntervalMs);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = null;
+  }
+
   private scheduleReconnect(): void {
     if (this.closed) return;
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = null;
     this.setStatus("reconnecting");
+    this.startPolling();
     const attempt = this.reconnectAttempt;
     const capped = Math.min(
       this.opts.maxBackoffMs,
@@ -327,13 +368,14 @@ function getHub(
   opts: StreamOptions,
 ): { hub: StreamHub; wsUrl: string } {
   const wsUrl = resolveWsUrl(apiBase, wsPath);
-  const key = `${apiBase}::${wsUrl}`;
+  const key = `${apiBase}::${wsUrl}::${opts.repo ?? ""}`;
   let hub = hubs.get(key);
   if (!hub) {
-    hub = new StreamHub(key, apiBase, wsUrl, {
+    hub = new StreamHub(key, apiBase, wsUrl, opts.repo, {
       maxBackoffMs: opts.maxBackoffMs ?? 30000,
       baseBackoffMs: opts.baseBackoffMs ?? 1000,
       heartbeatMs: opts.heartbeatMs ?? 30000,
+      pollIntervalMs: opts.pollIntervalMs ?? 3000,
     });
     hubs.set(key, hub);
   }
@@ -352,6 +394,7 @@ export function useMissionControlStream(
 ): MissionControlStream {
   const apiBase = resolveApiBase(opts.apiBase);
   const wsPath = opts.wsPath ?? DEFAULT_WS_PATH;
+  const repo = opts.repo;
   const [snapshot, setSnapshot] =
     useState<HydratedSnapshot>(INITIAL_SNAPSHOT);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
@@ -376,9 +419,9 @@ export function useMissionControlStream(
       hubRef.current = null;
       detach();
     };
-    // apiBase/wsPath identity drives the hub key; options are hub-scoped.
+    // apiBase/wsPath/repo identity drives the hub key; options are hub-scoped.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiBase, wsPath]);
+  }, [apiBase, wsPath, repo]);
 
   const selectRun = useCallback((runId: string | null) => {
     hubRef.current?.selectRun(runId);

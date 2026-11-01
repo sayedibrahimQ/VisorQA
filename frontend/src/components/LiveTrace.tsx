@@ -21,10 +21,7 @@ const STEPS: { key: FSMStep; label: string; model: string }[] = [
 export function LiveTrace({
   currentStep = "1.SENSE",
   strikes = 0,
-  events = [
-    { timestamp: "00:01.2", step: "SENSE", message: "DOM bounding boxes extracted (Playwright 375x812)" },
-    { timestamp: "00:02.4", step: "SENSE", message: "SAM 3.1 segmented M_SAM for visor-el-04 (V_r = 0.62 < 0.85)" },
-  ],
+  events = [],
 }: LiveTraceProps) {
   const currentIndex = STEPS.findIndex((s) => s.key === currentStep);
 
