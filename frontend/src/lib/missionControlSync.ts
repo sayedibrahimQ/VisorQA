@@ -260,6 +260,12 @@ export class MissionControlSync {
     }
   }
 
+  clear(): void {
+    this.runs.clear();
+    this.activeRunId = null;
+    this.seenArrivalRuns.clear();
+  }
+
   snapshot(): HydratedSnapshot {
     const runs = [...this.runs.values()]
       .map((s) => s.run)

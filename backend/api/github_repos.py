@@ -16,6 +16,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from backend.api.auth import github_api, resolve_github_token
+from backend.config import settings
 
 router = APIRouter(prefix="/api/github", tags=["GitHub Repositories"])
 runs_router = APIRouter(prefix="/api/runs", tags=["GitHub Run Actions"])
@@ -24,33 +25,65 @@ runs_router = APIRouter(prefix="/api/runs", tags=["GitHub Run Actions"])
 async def _token_or_401(request: Request):
     resolved = await resolve_github_token(request)
     if not resolved:
-        return None, JSONResponse(
+        return None, None, JSONResponse(
             {"detail": "GitHub authentication required (login or configure GITHUB_PAT / GitHub App)"},
             status_code=401)
-    return resolved[0], None
+    return resolved[0], resolved[1], None
 
 
 @router.get("/repos")
 async def list_repos(request: Request) -> Any:
-    resolved, err = await _token_or_401(request)
+    token, auth_mode, err = await _token_or_401(request)
     if err:
         return err
-    token = resolved
-    # Session mode distinguishes user tokens (list own repos) from
-    # installation tokens (list installation repos).
-    from backend.api.auth import current_session
-    session = current_session(request)
-    auth_mode = session["auth_mode"] if session else "app_or_pat"
+
+    async def _fetch_paginated_repos(tok: str) -> List[Dict[str, Any]]:
+        page = 1
+        acc: List[Dict[str, Any]] = []
+        while True:
+            st, data = await github_api(
+                "GET",
+                f"/user/repos?per_page=100&sort=updated&direction=desc"
+                f"&affiliation=owner,collaborator,organization_member&page={page}",
+                tok,
+            )
+            if st != 200 or not isinstance(data, list) or not data:
+                break
+            acc.extend(data)
+            if len(data) < 100:
+                break
+            page += 1
+        return acc
+
+    body: List[Dict[str, Any]] = []
     if auth_mode in ("oauth", "pat"):
-        status, body = await github_api(
-            "GET", "/user/repos?per_page=100&sort=updated", token)
+        body = await _fetch_paginated_repos(token)
     else:
-        status, body = await github_api("GET", "/installation/repositories", token)
-        if status == 200 and isinstance(body, dict):
-            body = body.get("repositories", [])
-    if status != 200 or not isinstance(body, list):
-        return JSONResponse({"detail": f"GitHub repos request failed ({status})"},
-                            status_code=502)
+        status, inst_body = await github_api("GET", "/installation/repositories", token)
+        if status == 200 and isinstance(inst_body, dict):
+            body = inst_body.get("repositories", [])
+        if not body:
+            # If installation has no repositories or fails, try user repos
+            body = await _fetch_paginated_repos(token)
+
+    # If GITHUB_PAT is configured with wider access (e.g. private/org repos),
+    # merge its accessible repositories so private repos are never hidden.
+    pat = (settings.GITHUB_PAT or "").strip()
+    if pat and pat != token:
+        try:
+            pat_repos = await _fetch_paginated_repos(pat)
+            existing_names = {r.get("full_name") for r in body if r.get("full_name")}
+            for pr in pat_repos:
+                fn = pr.get("full_name")
+                if fn and fn not in existing_names:
+                    body.append(pr)
+                    existing_names.add(fn)
+        except Exception:
+            pass
+
+    # Sort repos by updated_at descending
+    body.sort(key=lambda r: str(r.get("updated_at") or ""), reverse=True)
+
     return [{
         "full_name": r.get("full_name"),
         "name": r.get("name"),
@@ -65,13 +98,18 @@ async def list_repos(request: Request) -> Any:
 
 @router.get("/repos/{owner}/{repo}/pulls")
 async def list_pulls(owner: str, repo: str, request: Request) -> Any:
-    resolved, err = await _token_or_401(request)
+    token, _, err = await _token_or_401(request)
     if err:
         return err
-    token = resolved
     status, body = await github_api(
         "GET", f"/repos/{owner}/{repo}/pulls?state=all&per_page=50&sort=updated"
                "&direction=desc", token)
+    if (status != 200 or not isinstance(body, list)) and settings.GITHUB_PAT:
+        pat = settings.GITHUB_PAT.strip()
+        if pat != token:
+            status, body = await github_api(
+                "GET", f"/repos/{owner}/{repo}/pulls?state=all&per_page=50&sort=updated"
+                       "&direction=desc", pat)
     if status != 200 or not isinstance(body, list):
         return JSONResponse({"detail": f"GitHub pulls request failed ({status})"},
                             status_code=502)
@@ -86,18 +124,23 @@ async def list_pulls(owner: str, repo: str, request: Request) -> Any:
         "updated_at": p.get("updated_at"),
         "html_url": p.get("html_url"),
     } for p in body]
-    pulls.sort(key=lambda p: (0 if p["state"] == "open" else 1, p["number"] or 0))
+    # OPEN PRs first (0 < 1), then newest PR number descending
+    pulls.sort(key=lambda p: (0 if p.get("state") == "open" else 1, -(p.get("number") or 0)))
     return pulls
 
 
 @router.get("/repos/{owner}/{repo}/branches")
 async def list_branches(owner: str, repo: str, request: Request) -> Any:
-    resolved, err = await _token_or_401(request)
+    token, _, err = await _token_or_401(request)
     if err:
         return err
-    token = resolved
     status, body = await github_api(
         "GET", f"/repos/{owner}/{repo}/branches?per_page=100", token)
+    if (status != 200 or not isinstance(body, list)) and settings.GITHUB_PAT:
+        pat = settings.GITHUB_PAT.strip()
+        if pat != token:
+            status, body = await github_api(
+                "GET", f"/repos/{owner}/{repo}/branches?per_page=100", pat)
     if status != 200 or not isinstance(body, list):
         return JSONResponse({"detail": f"GitHub branches request failed ({status})"},
                             status_code=502)
@@ -188,10 +231,9 @@ def _diff_target_files(diff: str) -> List[str]:
 
 @runs_router.post("/{run_id}/github/comment")
 async def post_telemetry_comment(run_id: str, request: Request) -> Any:
-    resolved, err = await _token_or_401(request)
+    token, _, err = await _token_or_401(request)
     if err:
         return err
-    token = resolved
     record = _load_run_record(run_id)
     if record is None:
         return JSONResponse({"detail": f"run {run_id} not found"}, status_code=404)
@@ -236,10 +278,9 @@ async def post_telemetry_comment(run_id: str, request: Request) -> Any:
 
 @runs_router.post("/{run_id}/github/commit")
 async def commit_fix(run_id: str, request: Request) -> Any:
-    resolved, err = await _token_or_401(request)
+    token, _, err = await _token_or_401(request)
     if err:
         return err
-    token = resolved
     record = _load_run_record(run_id)
     if record is None:
         return JSONResponse({"detail": f"run {run_id} not found"}, status_code=404)

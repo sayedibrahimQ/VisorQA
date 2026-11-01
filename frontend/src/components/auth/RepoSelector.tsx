@@ -101,39 +101,61 @@ export function RepoSelector({ selectedRepo, onSelect }: RepoSelectorProps) {
             <p data-testid="repo-error" role="alert" className="px-3 py-4 text-xs text-defect-crimson">
               {error}
             </p>
-          ) : filtered.length === 0 ? (
-            <p className="px-3 py-4 text-xs text-text-secondary">No repositories match.</p>
           ) : (
-            <ul role="listbox" aria-label="Your GitHub repositories" className="max-h-72 overflow-y-auto py-1">
-              {filtered.map((repo) => (
-                <li key={repo.full_name}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={repo.full_name === selectedRepo}
-                    data-testid={`repo-option-${repo.full_name}`}
-                    onClick={() => {
-                      onSelect(repo.full_name);
-                      setOpen(false);
-                    }}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-mono text-xs text-text-primary">
-                        {repo.full_name}
-                      </span>
-                      <span className="block font-mono text-[10px] text-text-muted">
-                        {repo.private ? "private" : "public"} · {repo.default_branch} ·{" "}
-                        {repo.open_issues_count} open issues
-                      </span>
-                    </span>
-                    {repo.full_name === selectedRepo ? (
-                      <Check className="h-3.5 w-3.5 shrink-0 text-verified-emerald" aria-hidden="true" />
-                    ) : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <div
+                data-testid="repo-count-header"
+                className="flex items-center justify-between border-b border-border-subtle/80 bg-surface-subtle px-3 py-1.5 font-mono text-[11px] text-text-muted"
+              >
+                <span>All Repositories ({repos.length})</span>
+                {query ? <span>{filtered.length} matching</span> : null}
+              </div>
+              {filtered.length === 0 ? (
+                <p className="px-3 py-4 text-xs text-text-secondary">No repositories match.</p>
+              ) : (
+                <ul role="listbox" aria-label="Your GitHub repositories" className="max-h-72 overflow-y-auto py-1">
+                  {filtered.map((repo) => (
+                    <li key={repo.full_name}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={repo.full_name === selectedRepo}
+                        data-testid={`repo-option-${repo.full_name}`}
+                        onClick={() => {
+                          onSelect(repo.full_name);
+                          setOpen(false);
+                        }}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate font-mono text-xs text-text-primary">
+                              {repo.full_name}
+                            </span>
+                            <span
+                              className={cn(
+                                "shrink-0 rounded px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide",
+                                repo.private
+                                  ? "border border-triage-amber/40 bg-triage-amber/15 text-triage-amber"
+                                  : "border border-border-subtle bg-surface-elevated text-text-muted",
+                              )}
+                            >
+                              {repo.private ? "private" : "public"}
+                            </span>
+                          </span>
+                          <span className="block font-mono text-[10px] text-text-muted">
+                            {repo.default_branch} · {repo.open_issues_count} open issues
+                          </span>
+                        </span>
+                        {repo.full_name === selectedRepo ? (
+                          <Check className="h-3.5 w-3.5 shrink-0 text-verified-emerald" aria-hidden="true" />
+                        ) : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
           {selectedRepo ? (
             <div className="border-t border-border-subtle px-3 py-2">

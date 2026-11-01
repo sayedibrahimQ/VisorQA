@@ -144,3 +144,55 @@ def test_apply_unified_diff_verifies_context():
     assert apply_unified_diff("a\nb\nd\n", diff) == "a\nc\nd\n"
     with pytest.raises(ValueError):
         apply_unified_diff("x\ny\nz\n", diff)
+
+
+def test_pulls_ordering_open_first_then_descending(client, monkeypatch):
+    import backend.api.github_repos as repos_mod
+
+    async def fake_api(method, path, token, client=None, **kwargs):
+        if "/pulls" in path:
+            return 200, [
+                {"number": 1, "state": "closed", "title": "First Closed"},
+                {"number": 2, "state": "closed", "title": "Second Closed"},
+                {"number": 5, "state": "open", "title": "Fifth Open"},
+                {"number": 10, "state": "open", "title": "Tenth Open"},
+            ]
+        return 404, {}
+
+    monkeypatch.setattr(repos_mod, "github_api", fake_api)
+    client.post("/api/auth/github/token", json={"token": "good-token"})
+    resp = client.get("/api/github/repos/octocat/visor/pulls")
+    assert resp.status_code == 200
+    numbers = [p["number"] for p in resp.json()]
+    # Open PRs descending (#10, #5), then closed descending (#2, #1)
+    assert numbers == [10, 5, 2, 1]
+
+
+def test_clear_runs_endpoint(client, tmp_path, monkeypatch):
+    from backend.config import settings
+    from backend.core.artifacts import ArtifactStore
+
+    monkeypatch.setattr(settings, "BROWSER_ARTIFACTS_DIR", str(tmp_path))
+    store = ArtifactStore(root=tmp_path)
+    store.save_run_record({
+        "id": "run-del-1", "pr_number": 1, "repo_name": "octocat/visor",
+        "repo_full_name": "octocat/visor", "status": "QUEUED",
+    })
+    store.save_run_record({
+        "id": "run-keep-1", "pr_number": 2, "repo_name": "other/repo",
+        "repo_full_name": "other/repo", "status": "QUEUED",
+    })
+
+    # Clear scoped to octocat/visor
+    res = client.delete("/api/runs?repo=octocat/visor")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "ok"
+    assert body["repo"] == "octocat/visor"
+
+    # Verify run-del-1 was removed and run-keep-1 remains
+    records = store.list_run_records()
+    ids = [r["id"] for r in records]
+    assert "run-del-1" not in ids
+    assert "run-keep-1" in ids
+

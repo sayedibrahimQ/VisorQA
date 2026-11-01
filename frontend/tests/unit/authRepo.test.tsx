@@ -91,6 +91,7 @@ describe("RepoSelector", () => {
     render(<RepoSelector selectedRepo={null} onSelect={onSelect} />);
     fireEvent.click(screen.getByTestId("repo-selector-toggle"));
     await waitFor(() => expect(screen.getByTestId("repo-option-octocat/visor")).toBeTruthy());
+    expect(screen.getByTestId("repo-count-header").textContent).toContain("All Repositories (2)");
     fireEvent.change(screen.getByTestId("repo-search"), { target: { value: "other" } });
     expect(screen.queryByTestId("repo-option-octocat/visor")).toBeNull();
     fireEvent.click(screen.getByTestId("repo-option-octocat/other"));

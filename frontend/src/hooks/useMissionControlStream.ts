@@ -29,6 +29,8 @@ export interface MissionControlStream {
   focusLatencyMs: number | null;
   lastEventAt: string | null;
   selectRun: (runId: string | null) => void;
+  rehydrate: () => void;
+  clearRuns: () => void;
 }
 
 export interface StreamOptions {
@@ -123,6 +125,15 @@ class StreamHub {
 
   selectRun(runId: string | null): void {
     this.sync.selectRun(runId);
+    this.emitSnapshot();
+  }
+
+  rehydrate(): void {
+    this.hydrate();
+  }
+
+  clear(): void {
+    this.sync.clear();
     this.emitSnapshot();
   }
 
@@ -364,6 +375,14 @@ export function useMissionControlStream(
     hubRef.current?.selectRun(runId);
   }, []);
 
+  const rehydrate = useCallback(() => {
+    hubRef.current?.rehydrate();
+  }, []);
+
+  const clearRuns = useCallback(() => {
+    hubRef.current?.clear();
+  }, []);
+
   const activeRun =
     snapshot.activeRunId === null
       ? null
@@ -380,5 +399,7 @@ export function useMissionControlStream(
     focusLatencyMs: snapshot.focusLatencyMs,
     lastEventAt: snapshot.lastEventAt,
     selectRun,
+    rehydrate,
+    clearRuns,
   };
 }

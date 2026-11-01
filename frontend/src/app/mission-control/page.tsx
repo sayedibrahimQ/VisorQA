@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { ScanEye } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   resolveApiBase,
   useMissionControlStream,
@@ -60,30 +62,9 @@ export default function MissionControlPage() {
     focusLatencyMs,
     lastEventAt,
     selectRun,
+    rehydrate,
+    clearRuns,
   } = useMissionControlStream();
-
-  // Workstream 2: hydrate rich details for the selection. liveKey changes
-  // on WS status/strike transitions (incl. terminal) -> immediate refetch;
-  // the hook's generation guard drops stale in-flight responses.
-  const liveKey = `${activeRun?.status ?? ""}:${activeRun?.strikes ?? 0}:${lastEventAt ?? ""}`;
-  const { details } = useRunDetails(activeRunId, { liveKey });
-  const apiBase = resolveApiBase();
-
-  const [selectedAttempt, setSelectedAttempt] = useState<number | null>(null);
-  useEffect(() => {
-    setSelectedAttempt(null);
-  }, [activeRunId]);
-  const effectiveAttempt = selectedAttempt ?? latestAttemptNumber(details);
-
-  const stage = adaptRunToStage(activeRun);
-  const liveStage = details ? stageForAttempt(details, effectiveAttempt, apiBase) : null;
-  const liveScorecard = details ? scorecardForAttempt(details, effectiveAttempt) : null;
-  const scorecard = getScorecard(activeRun);
-  const triage = details ? triageForRun(details) : getTriage(activeRun);
-  const inspector = details
-    ? inspectorForAttempt(details, effectiveAttempt)
-    : getInspector(activeRun);
-  const runActive = activeRun !== null && !isHistoricalRun(activeRun);
 
   // --- Repository scoping (strict: everything below filters by repo) ---
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
@@ -93,6 +74,7 @@ export default function MissionControlPage() {
   }, []);
   const selectRepo = (repoFullName: string) => {
     setSelectedRepo(repoFullName);
+    selectRun(null);
     const url = new URL(window.location.href);
     url.searchParams.set("repo", repoFullName);
     window.history.replaceState(null, "", url.toString());
@@ -100,6 +82,56 @@ export default function MissionControlPage() {
   const scopedRuns = selectedRepo
     ? runs.filter((r) => r.repo_name === selectedRepo)
     : runs;
+
+  // Active run must belong to the selected repo if one is selected; otherwise null (wait for user PR selection)
+  const scopedActiveRun =
+    activeRun && selectedRepo && activeRun.repo_name && activeRun.repo_name !== selectedRepo
+      ? null
+      : activeRun;
+  const effectiveActiveRunId = scopedActiveRun ? scopedActiveRun.id : null;
+
+  // Workstream 2: hydrate rich details for the selection. liveKey changes
+  // on WS status/strike transitions (incl. terminal) -> immediate refetch;
+  // the hook's generation guard drops stale in-flight responses.
+  const liveKey = `${scopedActiveRun?.status ?? ""}:${scopedActiveRun?.strikes ?? 0}:${lastEventAt ?? ""}`;
+  const { details } = useRunDetails(effectiveActiveRunId, { liveKey });
+  const apiBase = resolveApiBase();
+
+  const [selectedAttempt, setSelectedAttempt] = useState<number | null>(null);
+  useEffect(() => {
+    setSelectedAttempt(null);
+  }, [effectiveActiveRunId]);
+  const effectiveAttempt = selectedAttempt ?? latestAttemptNumber(details);
+
+  const stage = adaptRunToStage(scopedActiveRun);
+  const liveStage = details ? stageForAttempt(details, effectiveAttempt, apiBase) : null;
+  const liveScorecard = details ? scorecardForAttempt(details, effectiveAttempt) : null;
+  const scorecard = getScorecard(scopedActiveRun);
+  const triage = details ? triageForRun(details) : getTriage(scopedActiveRun);
+  const inspector = details
+    ? inspectorForAttempt(details, effectiveAttempt)
+    : getInspector(scopedActiveRun);
+  const runActive = scopedActiveRun !== null && !isHistoricalRun(scopedActiveRun);
+
+  const [clearingRuns, setClearingRuns] = useState(false);
+  const handleClearRuns = async () => {
+    setClearingRuns(true);
+    try {
+      const url = selectedRepo
+        ? `${apiBase}/api/runs?repo=${encodeURIComponent(selectedRepo)}`
+        : `${apiBase}/api/runs`;
+      const res = await fetch(url, { method: "DELETE", credentials: "include" });
+      if (res.ok) {
+        clearRuns();
+        selectRun(null);
+        rehydrate();
+      }
+    } catch (err) {
+      console.error("Failed to clear runs:", err);
+    } finally {
+      setClearingRuns(false);
+    }
+  };
 
   const [pulls, setPulls] = useState<GitHubPull[]>([]);
   const [branches, setBranches] = useState<{ name: string; sha: string }[]>([]);
@@ -164,6 +196,9 @@ export default function MissionControlPage() {
         body && typeof body === "object" && "id" in body
           ? String((body as Record<string, unknown>).id)
           : "";
+      if (id) {
+        selectRun(id);
+      }
       setActionMsg({ text: `Optical QA scan dispatched for ${selectedRepo}${prNumber ? ` PR #${prNumber}` : ` @ ${branch}`} (run ${id}). Live progress streams in automatically.` });
     } catch (err) {
       setActionMsg({ text: err instanceof Error ? err.message : "Scan dispatch failed" });
@@ -271,7 +306,7 @@ export default function MissionControlPage() {
           </p>
         ) : null}
 
-        <div className="mt-5 grid min-w-0 flex-1 gap-4 md:grid-cols-[240px_minmax(0,1fr)] lg:grid-cols-[292px_minmax(0,1fr)] xl:grid-cols-[292px_minmax(0,1fr)_380px] md:min-h-0 md:h-full overflow-hidden">
+        <div className="mt-5 grid min-w-0 flex-1 gap-4 md:grid-cols-[240px_minmax(0,1fr)] lg:grid-cols-[292px_minmax(0,1fr)] xl:grid-cols-[292px_minmax(0,1fr)_380px] md:grid-rows-[minmax(0,1fr)] md:min-h-0 md:h-full overflow-hidden">
           <div className="min-w-0 space-y-4 md:h-full md:min-h-0 flex flex-col overflow-hidden">
             {selectedRepo ? (
               <section
@@ -294,8 +329,19 @@ export default function MissionControlPage() {
                   <ul className="mt-2 space-y-2 flex-1 min-h-0 overflow-y-auto pr-1">
                     {pulls.map((pr) => {
                       const match = scopedRuns.find((r) => r.pr_number === pr.number);
+                      const isSelected = match && effectiveActiveRunId === match.id;
                       return (
-                        <li key={pr.number} data-testid={`pr-row-${pr.number}`} className="rounded-md border border-border-subtle bg-surface px-2.5 py-2">
+                        <li
+                          key={pr.number}
+                          data-testid={`pr-row-${pr.number}`}
+                          onClick={() => {
+                            if (match) selectRun(match.id);
+                          }}
+                          className={cn(
+                            "rounded-md border border-border-subtle bg-surface px-2.5 py-2 transition-colors cursor-pointer hover:border-border-strong",
+                            isSelected && "border-laser-cyan/60 bg-surface-elevated ring-1 ring-laser-cyan/30",
+                          )}
+                        >
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="font-mono text-xs text-text-primary">#{pr.number}</span>
                             <span className="font-mono text-[10px] text-text-muted">{pr.state}</span>
@@ -308,7 +354,10 @@ export default function MissionControlPage() {
                             {match ? (
                               <button
                                 type="button"
-                                onClick={() => selectRun(match.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  selectRun(match.id);
+                                }}
                                 className="rounded-sm border border-neural-pulse/50 px-1.5 py-0.5 font-mono text-[10px] text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
                               >
                                 Run: {match.status}
@@ -317,7 +366,10 @@ export default function MissionControlPage() {
                             <button
                               type="button"
                               data-testid={`scan-pr-${pr.number}`}
-                              onClick={() => void dispatchScan(pr.number, pr.head_ref, pr.head_sha)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void dispatchScan(pr.number, pr.head_ref, pr.head_sha);
+                              }}
                               className="rounded-sm border border-border-subtle px-1.5 py-0.5 font-mono text-[10px] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
                             >
                               Run Optical QA Scan
@@ -362,24 +414,26 @@ export default function MissionControlPage() {
             ) : null}
             <PRRunSidebar
               runs={scopedRuns}
-              activeRunId={activeRunId}
+              activeRunId={effectiveActiveRunId}
               loading={loading}
               error={error}
               connectionStatus={status}
               onSelect={(id) => selectRun(id)}
+              onClearRuns={handleClearRuns}
+              clearing={clearingRuns}
               className="min-w-0 flex-1 min-h-0 flex flex-col overflow-hidden"
             />
           </div>
 
           <section aria-label="Active workspace" aria-live="polite" className="min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:pr-2">
-            {activeRun ? (
-              <div data-testid="active-run" data-run-id={activeRun.id} className="min-w-0">
+            {scopedActiveRun ? (
+              <div data-testid="active-run" data-run-id={scopedActiveRun.id} className="min-w-0">
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                   <h2 className="min-w-0 truncate text-sm font-semibold text-text-secondary">
-                    Active workspace — {activeRun.repo_name} PR #
-                    {activeRun.pr_number}
+                    Active workspace — {scopedActiveRun.repo_name} PR #
+                    {scopedActiveRun.pr_number}
                   </h2>
-                  <ThreeStrikeLoop attempt={getAttemptState(activeRun)} />
+                  <ThreeStrikeLoop attempt={getAttemptState(scopedActiveRun)} />
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   <button
@@ -415,7 +469,7 @@ export default function MissionControlPage() {
                   ) : null}
                 </div>
                 <div className="mt-3">
-                  <FSMOrchestratorBar run={activeRun} />
+                  <FSMOrchestratorBar run={scopedActiveRun} />
                 </div>
                 <div className="mt-4">
                   <DualViewportStage
@@ -434,41 +488,41 @@ export default function MissionControlPage() {
                 </div>
                 <div className="mt-4">
                   <LiveTrace
-                    currentStep={activeRun.current_step}
-                    strikes={activeRun.strikes}
+                    currentStep={scopedActiveRun.current_step}
+                    strikes={scopedActiveRun.strikes}
                   />
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-2 font-mono text-xs text-text-secondary sm:grid-cols-3">
                   <div>
                     <dt>Branch</dt>
-                    <dd className="truncate text-text-primary">{activeRun.branch}</dd>
+                    <dd className="truncate text-text-primary">{scopedActiveRun.branch}</dd>
                   </div>
                   <div>
                     <dt>Commit</dt>
                     <dd className="truncate text-text-primary">
-                      {activeRun.commit_sha}
+                      {scopedActiveRun.commit_sha}
                     </dd>
                   </div>
                   <div>
                     <dt>Status</dt>
-                    <dd className="text-text-primary">{activeRun.status}</dd>
+                    <dd className="text-text-primary">{scopedActiveRun.status}</dd>
                   </div>
                   <div>
                     <dt>Anomalies</dt>
                     <dd className="text-text-primary">
-                      {activeRun.anomalies_count ?? 0}
+                      {scopedActiveRun.anomalies_count ?? 0}
                     </dd>
                   </div>
                   <div>
                     <dt>Attempt</dt>
                     <dd className="text-text-primary">
-                      {activeRun.strikes}/3
+                      {scopedActiveRun.strikes}/3
                     </dd>
                   </div>
                   <div>
                     <dt>Updated</dt>
                     <dd className="truncate text-text-primary">
-                      {activeRun.updated_at ?? "—"}
+                      {scopedActiveRun.updated_at ?? "—"}
                     </dd>
                   </div>
                 </dl>
@@ -476,9 +530,20 @@ export default function MissionControlPage() {
             ) : (
               <div className="min-w-0">
                 <FSMOrchestratorBar run={null} />
-                <p data-testid="no-active-run" className="mt-4 text-sm text-text-secondary">
-                  No active run. New PR runs appear here automatically.
-                </p>
+                <div
+                  data-testid="no-active-run"
+                  className="mt-6 rounded-lg border border-border-subtle bg-surface-subtle p-8 text-center"
+                >
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-border-subtle bg-surface text-laser-cyan mb-3">
+                    <ScanEye className="h-6 w-6" aria-hidden="true" />
+                  </div>
+                  <h3 className="font-display text-base font-semibold text-text-primary">
+                    Ready to Scan
+                  </h3>
+                  <p className="mt-1 text-xs text-text-secondary max-w-md mx-auto">
+                    Select a Pull Request or Branch on the left to start an autonomous visual inspection, or open a new PR on GitHub to trigger the webhook.
+                  </p>
+                </div>
               </div>
             )}
           </section>
@@ -499,7 +564,7 @@ export default function MissionControlPage() {
               <div className="border-t border-border-subtle" />
               <LCATriageTree triage={triage} />
               <div className="border-t border-border-subtle" />
-              <ArchitectCoderInspector data={inspector} runId={activeRunId} />
+              <ArchitectCoderInspector data={inspector} runId={effectiveActiveRunId} />
             </div>
           </aside>
         </div>
