@@ -37,8 +37,10 @@ def sandbox_root() -> Path:
 
 
 def _git(args: List[str], cwd: Optional[Path] = None, timeout: int = 180) -> Tuple[int, str]:
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
     proc = subprocess.run(["git", *args], cwd=str(cwd) if cwd else None,
-                          capture_output=True, text=True, timeout=timeout)
+                          capture_output=True, text=True, timeout=timeout, env=env)
     return proc.returncode, (proc.stdout + proc.stderr).strip()
 
 
@@ -56,25 +58,43 @@ def _origin_matches(root: Path, repo_full_name: str) -> bool:
     return url.endswith(repo_full_name.lower())
 
 
+EXCLUDED_DIRS = {
+    ".git", "node_modules", ".next", "dist", "build",
+    "__pycache__", ".visor-snapshots", ".venv", "venv",
+    "artifacts", ".pytest_cache", ".turbo"
+}
+
+
 def _frontend_files(root: Path, priority: List[str]) -> List[str]:
     found: List[str] = []
     seen = set()
     for rel in priority:
         norm = normalize_path(rel)
-        if norm and (root / norm).is_file() and norm not in seen:
+        if (
+            norm
+            and Path(norm).suffix.lower() in FRONTEND_EXTS
+            and (root / norm).is_file()
+            and norm not in seen
+        ):
             seen.add(norm)
             found.append(norm)
-    for path in sorted(root.rglob("*")):
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIRS and not d.startswith(".")]
+        for f in filenames:
+            if len(found) >= MAX_FILES:
+                break
+            suffix = Path(f).suffix.lower()
+            if suffix not in FRONTEND_EXTS:
+                continue
+            full_path = Path(dirpath) / f
+            rel = full_path.relative_to(root).as_posix()
+            if rel not in seen:
+                seen.add(rel)
+                found.append(rel)
         if len(found) >= MAX_FILES:
             break
-        if not path.is_file() or path.suffix.lower() not in FRONTEND_EXTS:
-            continue
-        rel = path.relative_to(root).as_posix()
-        if "node_modules" in rel or "/.next/" in rel or rel.startswith(".git"):
-            continue
-        if rel not in seen:
-            seen.add(rel)
-            found.append(rel)
+
     # PR-changed, non-protected frontend files first (Node 2 input order).
     found.sort(key=lambda p: (0 if p in priority and not is_protected_path(p) else
                               1 if not is_protected_path(p) else 2, p))
@@ -167,17 +187,18 @@ async def hydrate_pr_workspace(
     # 1) Local checkout match -> isolated git worktree at the PR branch.
     local = _local_checkout_root()
     if local is not None and repo_full_name and _origin_matches(local, repo_full_name):
-        try:
-            await asyncio.to_thread(_git, ["fetch", "--quiet", "origin", branch], local, 120)
-        except Exception:
-            pass
-        if pr_number:
+        if token:
             try:
-                await asyncio.to_thread(
-                    _git, ["fetch", "--quiet", "origin", f"pull/{pr_number}/head:pr-{pr_number}-{run_id[:8]}"],
-                    local, 120)
+                await asyncio.to_thread(_git, ["fetch", "--quiet", "origin", branch], local, 5)
             except Exception:
                 pass
+            if pr_number:
+                try:
+                    await asyncio.to_thread(
+                        _git, ["fetch", "--quiet", "origin", f"pull/{pr_number}/head:pr-{pr_number}-{run_id[:8]}"],
+                        local, 5)
+                except Exception:
+                    pass
         code, _ = await asyncio.to_thread(
             _git, ["worktree", "add", "--quiet", "--detach", str(dest),
                    f"origin/{branch}"], local, 180)

@@ -36,7 +36,16 @@ from backend.sandbox.interface import (
 )
 from backend.sandbox.patch_utils import commit_plan, validate_and_plan
 
-_SUCCESS_MARKERS = ("compiled successfully", "✓ compiled", "compiled /", "compiled in", "hmr updated", "compiled client and server")
+_SUCCESS_MARKERS = (
+    "compiled successfully",
+    "✓ compiled",
+    "compiled /",
+    "compiled in",
+    "hmr updated",
+    "compiled client and server",
+    " 200 -",
+    " 200 ok",
+)
 _FAILURE_MARKERS = ("failed to compile", "compile error", "module not found", "syntax error")
 _SESSION_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 

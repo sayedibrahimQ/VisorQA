@@ -190,7 +190,7 @@ class MuseWonderDiagnosisClient:
         self.model = model if model is not None else \
             getattr(settings, "MUSE_WONDER_MODEL", "")
         self.timeout_seconds = float(
-            timeout_seconds or getattr(settings, "WONDER_TIMEOUT_SECONDS", 30.0))
+            timeout_seconds or getattr(settings, "WONDER_TIMEOUT_SECONDS", 25.0))
         self.max_retries = max(0, int(max_retries))
         self.backoff_base_seconds = float(backoff_base_seconds)
         self._sleep = sleep or asyncio.sleep
