@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_ID: str = Field(default="", description="GitHub OAuth App client id")
     GITHUB_CLIENT_SECRET: str = Field(default="", description="GitHub OAuth App client secret")
     GITHUB_WEBHOOK_SECRET: str = Field(default="", description="GitHub Webhook HMAC Secret")
+    WEBHOOK_PUBLIC_URL: str = Field(
+        default="",
+        description="Public backend base URL for auto-registering the repo webhook (empty = verify only)",
+    )
 
     # GitHub App Integration (visorqa-bot[bot])
     GITHUB_APP_ID: str = Field(default="", description="GitHub App ID (General -> App ID)")

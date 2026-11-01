@@ -17,6 +17,7 @@ from backend.core.artifacts import artifacts_root as _artifacts_root_fn
 from backend.api.webhooks import router as webhooks_router
 from backend.api.routes_ws import router as ws_router, mission_control_ws_endpoint
 from backend.api.auth import router as auth_router
+from backend.api.settings import router as settings_router
 from backend.api.github_repos import router as github_router, runs_router as github_runs_router
 from backend.db.repository import init_db
 
@@ -75,6 +76,7 @@ app.add_middleware(
 app.include_router(webhooks_router)
 app.include_router(ws_router)
 app.include_router(auth_router)
+app.include_router(settings_router)
 app.include_router(github_router)
 app.include_router(github_runs_router)
 
