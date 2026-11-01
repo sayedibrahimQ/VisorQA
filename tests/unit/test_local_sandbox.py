@@ -123,7 +123,8 @@ async def test_path_containment_and_git_worktree(tmp_path):
     assert sp.run(["git", "-C", str(src), "worktree", "list"], capture_output=True, text=True).stdout.count("\n") <= 1
 
 
-def test_factory_provider_and_config_defaults():
+def test_factory_provider_and_config_defaults(monkeypatch):
+    monkeypatch.setenv("SANDBOX_PROVIDER", "local")
     from backend.sandbox.factory import create_sandbox_runner
     assert Settings().SANDBOX_PROVIDER == "local"
     assert Settings().TARGET_APP_PATH == "./demo-target-app"

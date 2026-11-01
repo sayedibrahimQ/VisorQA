@@ -1,20 +1,29 @@
 """Watched-repository settings API (Task 1): /api/settings/watched-repo.
 
 GET returns the persisted singleton record (or null). POST validates the
-repository against GitHub with the caller's authenticated token, upserts
-the singleton record, and verifies (or, when WEBHOOK_PUBLIC_URL is set,
-auto-registers) the pull_request webhook. webhook_active is only true
-when GitHub confirms a matching hook — it is never assumed.
+repository against GitHub, upserts the singleton record, and verifies
+(or, when WEBHOOK_PUBLIC_URL is set, auto-registers) the pull_request
+webhook. webhook_active is only true when GitHub confirms a matching
+hook — it is never assumed.
+
+Token resolution mirrors GET /api/github/repos and
+GET /api/github/repos/{owner}/{repo}/pulls: the caller's session OAuth
+token first, then GITHUB_PAT, then the GitHub App installation token.
+A 404 from one credential (common for private repos visible to the PAT
+but not the OAuth user) falls through to the next credential, and a
+repo already present in an accessible GET /user/repos listing counts
+as validated. Webhook verify/registration is best-effort: its failure
+never blocks saving the watched repository.
 """
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from backend.api.auth import github_api, resolve_github_token
+from backend.api.auth import app_installation_token, current_session, github_api, resolve_github_token
 from backend.config import settings
 from backend.db.models import get_watched_repository, save_watched_repository
 
@@ -35,8 +44,95 @@ async def get_watched_repo() -> Any:
     return get_watched_repository()
 
 
+async def _candidate_tokens(request: Request) -> List[Tuple[str, str]]:
+    """Ordered, de-duplicated (token, auth_mode) candidates.
+
+    Priority: session OAuth token -> GITHUB_PAT -> GitHub App
+    installation token — the same credentials that make
+    GET /api/github/repos and the repo pulls endpoint succeed.
+    """
+    candidates: List[Tuple[str, str]] = []
+
+    def _add(token: Optional[str], mode: str) -> None:
+        tok = (token or "").strip()
+        if tok and all(tok != existing for existing, _ in candidates):
+            candidates.append((tok, mode))
+
+    session = current_session(request) if request is not None else None
+    if session:
+        _add(session.get("token"), str(session.get("auth_mode") or "oauth"))
+    else:
+        # Fall back to the shared resolver (also covers test doubles and
+        # any future session store) before the env/App credentials.
+        try:
+            resolved = await resolve_github_token(request)
+        except Exception:
+            resolved = None
+        if resolved:
+            _add(resolved[0], resolved[1])
+    _add(settings.GITHUB_PAT, "pat")
+    try:
+        _add(await app_installation_token(), "github_app")
+    except Exception:
+        pass
+    return candidates
+
+
+async def _repo_listing_entry(token: str, repo_full_name: str) -> Optional[Dict[str, Any]]:
+    """Repo entry from the token's accessible listing, or None.
+
+    Mirrors GET /api/github/repos: /user/repos for user/PAT tokens and
+    /installation/repositories for GitHub App installation tokens.
+    """
+    wanted = repo_full_name.lower()
+    for path in ("/user/repos?per_page=100&affiliation=owner,collaborator,organization_member",
+                 "/installation/repositories"):
+        try:
+            status, body = await github_api("GET", path, token)
+        except Exception:
+            continue
+        if status != 200:
+            continue
+        rows: List[Any] = []
+        if isinstance(body, list):
+            rows = body
+        elif isinstance(body, dict) and isinstance(body.get("repositories"), list):
+            rows = body["repositories"]
+        for row in rows:
+            if isinstance(row, dict) and str(row.get("full_name") or "").lower() == wanted:
+                return row
+    return None
+
+
+async def _validate_repo(
+    repo_full_name: str, candidates: List[Tuple[str, str]],
+) -> Tuple[Optional[str], str, Optional[int]]:
+    """(winning_token, default_branch, last_status) across all candidates."""
+    last_status: Optional[int] = None
+    for token, _mode in candidates:
+        try:
+            status, body = await github_api("GET", f"/repos/{repo_full_name}", token)
+        except Exception:
+            continue
+        last_status = status
+        if status == 200 and isinstance(body, dict):
+            return token, str(body.get("default_branch") or "main"), status
+    # Direct lookup failed for every credential (e.g. OAuth 404 on a
+    # private repo): a repo already listed by GET /api/github/repos for
+    # any candidate still counts as validated.
+    for token, _mode in candidates:
+        entry = await _repo_listing_entry(token, repo_full_name)
+        if entry is not None:
+            return token, str(entry.get("default_branch") or "main"), 200
+    return None, "main", last_status
+
+
 async def _verify_or_register_webhook(repo_full_name: str, token: str) -> Dict[str, Any]:
-    """Confirm a VisorQA pull_request hook exists; register if possible."""
+    """Confirm a VisorQA pull_request hook exists; register if possible.
+
+    Best-effort by contract: every failure is reported in the result,
+    never raised, so it cannot block saving the watched repository.
+    """
     owner_repo = repo_full_name
     try:
         status, hooks = await github_api(
@@ -83,16 +179,18 @@ async def set_watched_repo(payload: WatchedRepoRequest, request: Request) -> Dic
     default_branch = "main"
     webhook: Dict[str, Any] = {"registered": False, "webhook_active": False,
                                "reason": "no GitHub token available to verify"}
-    resolved = await resolve_github_token(request)
-    token = resolved[0] if resolved else ""
-    if token:
-        status, body = await github_api("GET", f"/repos/{repo_full_name}", token)
-        if status != 200 or not isinstance(body, dict):
+    candidates = await _candidate_tokens(request)
+    if candidates:
+        token, default_branch, last_status = await _validate_repo(repo_full_name, candidates)
+        if token is None:
             raise HTTPException(
                 status_code=422,
-                detail=f"repository '{repo_full_name}' is not accessible via GitHub ({status})")
-        default_branch = str(body.get("default_branch") or "main")
-        webhook = await _verify_or_register_webhook(repo_full_name, token)
+                detail=f"repository '{repo_full_name}' is not accessible via GitHub ({last_status})")
+        try:
+            webhook = await _verify_or_register_webhook(repo_full_name, token)
+        except Exception as exc:  # webhook setup must never block saving
+            webhook = {"registered": False, "webhook_active": False,
+                       "reason": f"hook verification failed: {exc}"}
 
     record = save_watched_repository(
         repo_full_name,

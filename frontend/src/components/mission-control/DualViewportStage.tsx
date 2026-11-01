@@ -785,7 +785,7 @@ export function DualViewportStage({
       <div className="min-w-0 p-3">
         {loading ? (
           <p data-testid="stage-loading" className="py-8 text-center text-sm text-text-secondary">
-            Loading inspection artifacts…
+            Capturing 375x812 &amp; 1440x900 viewports from target app…
           </p>
         ) : null}
         {error ? (
@@ -799,7 +799,7 @@ export function DualViewportStage({
         ) : null}
         {!loading && !error && runId === null ? (
           <p data-testid="stage-no-run" className="py-8 text-center text-sm text-text-secondary">
-            Select a PR run to inspect its viewports.
+            No Active Inspection — Select an open Pull Request or trigger an Optical QA Scan
           </p>
         ) : null}
         {!loading && !error && runId !== null ? (

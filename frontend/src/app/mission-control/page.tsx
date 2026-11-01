@@ -51,20 +51,6 @@ interface GitHubPull {
 
 export default function MissionControlPage() {
   const { user, loading: authLoading, logout } = useAuth();
-  const {
-    runs,
-    activeRun,
-    activeRunId,
-    status,
-    loading,
-    error,
-    reconnectAttempt,
-    focusLatencyMs,
-    lastEventAt,
-    selectRun,
-    rehydrate,
-    clearRuns,
-  } = useMissionControlStream();
   const apiBase = resolveApiBase();
 
   // --- Watched repository (Task 1: DB-persisted singleton, strict scope) ---
@@ -82,6 +68,21 @@ export default function MissionControlPage() {
     const param = new URLSearchParams(window.location.search).get("repo");
     if (param) setSelectedRepo(param);
   }, []);
+
+  const {
+    runs,
+    activeRun,
+    activeRunId,
+    status,
+    loading,
+    error,
+    reconnectAttempt,
+    focusLatencyMs,
+    lastEventAt,
+    selectRun,
+    rehydrate,
+    clearRuns,
+  } = useMissionControlStream({ repo: selectedRepo ?? undefined });
   // Boot: the DB-persisted watched repo is the source of truth and wins
   // over any stale ?repo= param.
   useEffect(() => {
@@ -122,8 +123,24 @@ export default function MissionControlPage() {
     };
   }, [user, apiBase]);
   const selectRepo = (repoFullName: string) => {
+    const previousWatched = watchedRepo;
     setSelectedRepo(repoFullName);
     selectRun(null);
+    // Auto-confirm: lock the header badge onto the selection immediately;
+    // the server record below replaces this optimistic entry, and a
+    // failed POST rolls it back and surfaces the error in the picker.
+    setWatchedRepo({
+      repo_full_name: repoFullName,
+      default_branch:
+        previousWatched?.repo_full_name === repoFullName
+          ? previousWatched.default_branch
+          : "main",
+      webhook_active:
+        previousWatched?.repo_full_name === repoFullName
+          ? previousWatched.webhook_active
+          : false,
+      auto_heal_enabled: true,
+    });
     const url = new URL(window.location.href);
     url.searchParams.set("repo", repoFullName);
     window.history.replaceState(null, "", url.toString());
@@ -162,8 +179,11 @@ export default function MissionControlPage() {
             },
           );
           setWatchError(null);
+          setPickerDismissed(true);
         }
       } catch (err) {
+        setWatchedRepo(previousWatched);
+        setPickerDismissed(false);
         setWatchError(err instanceof Error ? err.message : "Could not persist watched repository");
       }
     })();
@@ -183,7 +203,7 @@ export default function MissionControlPage() {
   // on WS status/strike transitions (incl. terminal) -> immediate refetch;
   // the hook's generation guard drops stale in-flight responses.
   const liveKey = `${scopedActiveRun?.status ?? ""}:${scopedActiveRun?.strikes ?? 0}:${lastEventAt ?? ""}`;
-  const { details } = useRunDetails(effectiveActiveRunId, { liveKey });
+  const { details, loading: detailsLoading } = useRunDetails(effectiveActiveRunId, { liveKey });
 
   const [selectedAttempt, setSelectedAttempt] = useState<number | null>(null);
   useEffect(() => {
@@ -200,6 +220,33 @@ export default function MissionControlPage() {
     ? inspectorForAttempt(details, effectiveAttempt)
     : getInspector(scopedActiveRun);
   const runActive = scopedActiveRun !== null && !isHistoricalRun(scopedActiveRun);
+  // Executing with no real screenshot yet: honest capturing skeleton.
+  const stageCapturing =
+    runActive &&
+    !liveStage?.mobile.beforeUrl &&
+    !liveStage?.desktop.beforeUrl &&
+    !stage.mobile.beforeUrl &&
+    !stage.desktop.beforeUrl;
+  // Build/boot failure: surface the real backend error, never a fake shot.
+  const stageError = (() => {
+    if (!scopedActiveRun || !["FAILED", "ESCALATED", "HALTED"].includes(scopedActiveRun.status)) {
+      return null;
+    }
+    const reasons: string[] = [];
+    for (const att of details?.attempts ?? []) {
+      const spec = att.repair_spec as Record<string, unknown> | null | undefined;
+      for (const key of ["sense_error", "patch_error", "diagnose_error", "triage_error"]) {
+        const v = spec?.[key];
+        if (typeof v === "string" && v && !reasons.includes(v)) reasons.push(v);
+      }
+      for (const r of att.verification_feedback?.failure_reasons ?? []) {
+        if (r && !reasons.includes(r)) reasons.push(r);
+      }
+    }
+    return reasons.length > 0
+      ? reasons.join(" · ")
+      : `Run ${scopedActiveRun.status.toLowerCase()} — see telemetry drawer for the real error log.`;
+  })();
 
   const [clearingRuns, setClearingRuns] = useState(false);
   const handleClearRuns = async () => {
@@ -610,6 +657,8 @@ export default function MissionControlPage() {
                   <DualViewportStage
                     runId={stage.runId}
                     runLabel={stage.runLabel}
+                    loading={stageCapturing}
+                    error={stageError}
                     mobile={liveStage ? liveStage.mobile : stage.mobile}
                     desktop={liveStage ? liveStage.desktop : stage.desktop}
                     hmr={liveStage ? liveStage.hmr : stage.hmr}
@@ -673,10 +722,10 @@ export default function MissionControlPage() {
                     <ScanEye className="h-6 w-6" aria-hidden="true" />
                   </div>
                   <h3 className="font-display text-base font-semibold text-text-primary">
-                    Ready to Scan
+                    No Active Inspection
                   </h3>
                   <p className="mt-1 text-xs text-text-secondary max-w-md mx-auto">
-                    Select a Pull Request or Branch on the left to start an autonomous visual inspection, or open a new PR on GitHub to trigger the webhook.
+                    No Active Inspection — Select an open Pull Request or trigger an Optical QA Scan
                   </p>
                 </div>
               </div>

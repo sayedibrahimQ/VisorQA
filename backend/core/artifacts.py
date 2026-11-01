@@ -162,11 +162,13 @@ class ArtifactStore:
             entries.append({
                 "run_id": run_id,
                 "attempt": attempt,
-                "viewport": vp,
+                "viewport": VIEWPORT_FROM_KEY.get(vp, vp),
+                "viewport_key": vp,
                 "name": filename,
                 "path": str(file),
                 "url": self.url_for(run_id, attempt, vp, filename),
                 "kind": kind,
+                "synthetic": False,
             })
         return entries
 
@@ -192,11 +194,14 @@ def strike_decision(passed: Optional[bool], attempt_number: int,
     return "RETRY_NEXT_STRIKE"
 
 
-def b_dom_boxes(anomalies: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def b_dom_boxes(anomalies: Sequence[Dict[str, Any]],
+                extra_elements: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """visor_el_id -> B_DOM map. Geometry from stored boxes; fields the
-    backend never captured are explicit nulls, never invented."""
+    backend never captured are explicit nulls, never invented. Extra
+    sensed elements (every real DOM box SENSE measured, defect or not)
+    merge in so the stage reports the full measured element set."""
     boxes: Dict[str, Any] = {}
-    for a in anomalies or []:
+    for a in list(extra_elements or []) + list(anomalies or []):
         eid = str(a.get("element_id") or a.get("visor_el_id") or "")
         box = a.get("bounding_box") or a.get("b_dom_box") or a.get("box") or {}
         if not eid or not isinstance(box, dict):
@@ -270,10 +275,10 @@ def triage_metadata(spec: Optional[Dict[str, Any]], target_files: Sequence[str])
     candidates = extract_file_tree(spec)
     ratio = _finite(spec.get("token_reduction_ratio"))
     if ratio is None:
-        # Same formula Node 2 stores (1 - targets/candidates); product
-        # fallback keeps the telemetry field populated (Workstream 2 spec).
+        # Same formula Node 2 stores (1 - targets/candidates). No tree
+        # means no measurement: stay null, never invent a ratio.
         ratio = (1.0 - len(list(target_files or [])) / max(len(candidates), 1)) \
-            if candidates else 0.885
+            if candidates else None
     return {
         "lca_element_id": spec.get("lca_element_id"),
         "lca_dom": spec.get("lca_dom") or {},
@@ -288,7 +293,7 @@ def triage_metadata(spec: Optional[Dict[str, Any]], target_files: Sequence[str])
         "rejected_targets": spec.get("triage_rejected_targets") or [],
         "filtered_intentional_element_ids":
             spec.get("filtered_intentional_element_ids") or [],
-        "token_reduction_ratio": round(float(ratio), 4),
+        "token_reduction_ratio": round(float(ratio), 4) if ratio is not None else None,
     }
 
 
@@ -321,11 +326,6 @@ def patch_telemetry(diff: Optional[str], target_file: Optional[str],
         build_status = "failed"
     elif phase in APPLIED_PHASES or str(sandbox.get("server_state") or "") in ("starting", "running"):
         build_status = "running"
-    elif diff and desktop_passed is True:
-        build_status = "success"
-        phase = phase or "hmr_observed"
-        if hmr_latency is None:
-            hmr_latency = 18.5
     elif sandbox:
         build_status = "pending"
     else:
@@ -336,19 +336,11 @@ def patch_telemetry(diff: Optional[str], target_file: Optional[str],
     if not isinstance(per_file, dict):
         per_file = hashes
     provider = sandbox.get("backend")
-    if not provider and diff:
-        provider = "Local Worktree (git worktree)"
     hmr_status = sandbox.get("last_hmr_status")
-    if not hmr_status and (build_status == "success" or desktop_passed is True):
-        hmr_status = "observed"
+    # Hashes/latency/provider come only from real sandbox records;
+    # missing evidence stays null, never synthesized from the diff.
     pre_sha = per_file.get("pre_sha256")
     post_sha = per_file.get("post_sha256")
-    if not pre_sha and diff:
-        pre_sha = sha256_text(f"pre:{target_file or 'target'}:{diff[:20]}")
-    if not post_sha and diff:
-        post_sha = sha256_text(f"post:{target_file or 'target'}:{diff[-20:]}")
-    if diff and hmr_latency is None:
-        hmr_latency = 18.5
     return {
         "unified_diff": diff,
         "diff_sha256": sha256_text(diff),
@@ -382,22 +374,13 @@ def build_attempt_telemetry(
     verification_status: str = "",
     max_attempts: int = 3,
     github: Optional[Dict[str, Any]] = None,
+    sensed_elements: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Complete per-attempt snapshot (baseline attempt_0 when number == 0)."""
     from backend.core.verify import compute_dual_viewport_score, evaluate_viewport, normalize_viewport_metrics
 
-    if not viewport_metrics:
-        if attempt_number == 0:
-            viewport_metrics = {
-                "mobile": {"viewport": "mobile", "width": 375, "height": 812, "v_r": 0.62, "iou": 0.0, "delta_x": 0.0, "valid": True, "passed": False},
-                "desktop": {"viewport": "desktop", "width": 1440, "height": 900, "v_r": 1.0, "iou": 0.0, "delta_x": 0.0, "valid": True, "passed": True},
-            }
-        elif passed is True:
-            viewport_metrics = {
-                "mobile": {"viewport": "mobile", "width": 375, "height": 812, "v_r": 1.0, "iou": 0.0, "delta_x": 0.0, "valid": True, "passed": True},
-                "desktop": {"viewport": "desktop", "width": 1440, "height": 900, "v_r": 1.0, "iou": 0.0, "delta_x": 0.0, "valid": True, "passed": True},
-            }
-
+    # No measured metrics means invalid/null summaries. A baseline or a
+    # passed flag never fabricates V_r/IoU/Delta_x values.
     normalized = normalize_viewport_metrics(viewport_metrics) if viewport_metrics else {}
     summaries = {}
     evaluated = {}
@@ -418,7 +401,7 @@ def build_attempt_telemetry(
                         "desktop": {"before_url": None, "after_url": None}},
         "sam_masks": {"mobile": {"mask_url": None, "overlay_url": None},
                       "desktop": {"mask_url": None, "overlay_url": None}},
-        "b_dom_boxes": b_dom_boxes(anomalies),
+        "b_dom_boxes": b_dom_boxes(anomalies, sensed_elements),
         "element_metrics": element_metrics(anomalies),
         "viewport_summary": summaries,
         "triage_metadata": triage_metadata(repair_spec if isinstance(repair_spec, dict) else {},
@@ -480,21 +463,6 @@ def build_run_payload(
     is_res = bool(run.get("is_resolved", False) or str(run.get("status", "")).upper() == "RESOLVED")
 
     anomalies = [dict(a) for a in anomalies or []]
-    if not anomalies and run_id:
-        anomalies = [
-            {
-                "id": f"anom-{run_id}-04",
-                "element_id": "visor-el-04",
-                "defect_type": "OCCLUSION",
-                "visibility_ratio": 0.62,
-                "iou_score": 0.0,
-                "bleed_px": 0.0,
-                "bounding_box": {"x": 14.0, "y": 212.0, "width": 346.0, "height": 60.0},
-                "viewport": "375px",
-                "attempt_num": 0,
-                "status": "DETECTED",
-            }
-        ]
 
     by_attempt: Dict[int, List[Dict[str, Any]]] = {}
     for a in anomalies:
@@ -509,9 +477,7 @@ def build_run_payload(
     entries_list: List[Dict[str, Any]] = [dict(e) for e in artifact_entries or []]
     if not entries_list and run_id:
         entries_list = store.list_artifacts_for_run(run_id)
-    if run_id and (not any(e.get("kind") == "screenshot_before" for e in entries_list) or
-                   (is_res and not any(e.get("kind") == "screenshot_after" for e in entries_list))):
-        entries_list.extend(_synthetic_overlay_entries(store, run_id, anomalies, is_resolved=is_res))
+    # Missing screenshots stay missing: no synthetic entries are created.
 
     sandbox = run.get("sandbox") if isinstance(run.get("sandbox"), dict) else None
     repair_spec_state = run.get("repair_spec") if isinstance(run.get("repair_spec"), dict) else {}
@@ -525,33 +491,27 @@ def build_run_payload(
     }
 
     raw_attempts = list(attempts or [])
-    default_diff = (
-        run.get("best_patch")
-        or run.get("current_patch")
-        or "--- a/demo-target-app/src/app/checkout/CheckoutPage.tsx\n+++ b/demo-target-app/src/app/checkout/CheckoutPage.tsx\n@@ -10,3 +10,4 @@\n+// VisorQA verified repair: resolve occlusion"
-    )
-    if is_res and not any(r.get("passed") for r in raw_attempts):
-        raw_attempts.append({
-            "attempt_number": 1,
-            "repair_spec": repair_spec_state,
-            "unified_diff": default_diff,
-            "passed": True,
-            "verification_status": "verification_passed",
-            "viewport_metrics": {
-                "mobile": {"viewport": "mobile", "width": 375, "height": 812, "v_r": 1.0, "iou": 0.0, "delta_x": 0.0, "valid": True, "passed": True},
-                "desktop": {"viewport": "desktop", "width": 1440, "height": 900, "v_r": 1.0, "iou": 0.0, "delta_x": 0.0, "valid": True, "passed": True},
-            },
-        })
-    elif raw_attempts:
-        for att in raw_attempts:
-            if not att.get("unified_diff") and not att.get("patch_diff"):
-                att["unified_diff"] = default_diff
+    # Only a real recorded diff is ever surfaced; a resolved status alone
+    # never fabricates a strike attempt, diff, or perfect metrics.
+    default_diff = run.get("best_patch") or run.get("current_patch") or None
 
+    _baseline_sensed = repair_spec_state.get("baseline_sensed_elements") \
+        or repair_spec_state.get("sensed_elements")
+    _baseline_metrics = None
+    _evals = repair_spec_state.get("viewport_evaluations")
+    if isinstance(_evals, list):
+        _m = [dict(e) for e in _evals if isinstance(e, dict) and int(e.get("attempt", 0) or 0) == 0]
+        if _m:
+            _baseline_metrics = {
+                str(e.get("viewport_name") or e.get("viewport") or ""): e
+                for e in _m if e.get("viewport_name") or e.get("viewport")}
+            _baseline_metrics = _baseline_metrics or None
     attempts_out: List[Dict[str, Any]] = []
     baseline = build_attempt_telemetry(
-        attempt_number=0, anomalies=by_attempt.get(0, []), viewport_metrics=None,
+        attempt_number=0, anomalies=by_attempt.get(0, []), viewport_metrics=_baseline_metrics,
         repair_spec=repair_spec_state, diff=None, target_files=target_files,
-        sandbox=sandbox, passed=None, github=github)
+        sandbox=sandbox, passed=None, github=github,
+        sensed_elements=_baseline_sensed if isinstance(_baseline_sensed, list) else None)
     attempts_out.append(_fill_artifact_urls(baseline, entries_list))
 
     for raw in sorted(raw_attempts, key=lambda r: int(r.get("attempt_number", 0) or 0)):
@@ -571,7 +531,11 @@ def build_run_payload(
             passed=raw.get("passed") if isinstance(raw.get("passed"), bool) else None,
             verification_status=str(raw.get("verification_status") or ""),
             max_attempts=int(run.get("max_attempts", 3) or 3),
-            github=github)
+            github=github,
+            sensed_elements=raw.get("sensed_elements")
+            if isinstance(raw.get("sensed_elements"), list) else (
+                repair_spec_state.get("sensed_elements")
+                if isinstance(repair_spec_state.get("sensed_elements"), list) else None))
         # Stored telemetry (e.g. seed/DB) wins for patch/sandbox specifics.
         stored = raw.get("telemetry") if isinstance(raw.get("telemetry"), dict) else None
         if stored:
@@ -627,21 +591,6 @@ def persist_run_telemetry(state: Any, store: Optional[ArtifactStore] = None) -> 
     baseline_anomalies = getattr(state, "baseline_anomalies", None)
     if isinstance(baseline_anomalies, list) and baseline_anomalies:
         anomalies = [a.model_dump(mode="json") if hasattr(a, "model_dump") else dict(a) for a in baseline_anomalies]
-    elif not anomalies:
-        anomalies = [
-            {
-                "id": f"anom-{run_id}-04",
-                "element_id": "visor-el-04",
-                "defect_type": "OCCLUSION",
-                "visibility_ratio": 0.62,
-                "iou_score": 0.0,
-                "bleed_px": 0.0,
-                "bounding_box": {"x": 14.0, "y": 212.0, "width": 346.0, "height": 60.0},
-                "viewport": "375px",
-                "attempt_num": 0,
-                "status": "DETECTED",
-            }
-        ]
     attempts_raw: List[Dict[str, Any]] = []
     for att in getattr(state, "attempts", []) or []:
         attempts_raw.append(
@@ -653,20 +602,6 @@ def persist_run_telemetry(state: Any, store: Optional[ArtifactStore] = None) -> 
         sandbox = sb.model_dump(mode="json") if hasattr(sb, "model_dump") else dict(sb)
     repair_spec = getattr(state, "repair_spec", None)
     repair_spec = repair_spec if isinstance(repair_spec, dict) else {}
-
-    is_res = bool(getattr(state, "is_resolved", False) or str(getattr(state, "status", "")) == "RESOLVED")
-    if is_res and not any(a.get("passed") for a in attempts_raw):
-        attempts_raw.append({
-            "attempt_number": 1,
-            "repair_spec": repair_spec if isinstance(repair_spec, dict) else {},
-            "unified_diff": getattr(state, "best_patch", None) or getattr(state, "current_patch", None),
-            "passed": True,
-            "verification_status": "verification_passed",
-            "viewport_metrics": {
-                "mobile": {"viewport": "mobile", "width": 375, "height": 812, "v_r": 1.0, "iou": 0.0, "delta_x": 0.0, "valid": True, "passed": True},
-                "desktop": {"viewport": "desktop", "width": 1440, "height": 900, "v_r": 1.0, "iou": 0.0, "delta_x": 0.0, "valid": True, "passed": True},
-            },
-        })
 
     entries: List[Dict[str, Any]] = []
     # Copy real screenshot files referenced by verification, when present.
@@ -683,12 +618,6 @@ def persist_run_telemetry(state: Any, store: Optional[ArtifactStore] = None) -> 
                 saved = store.save_bytes(run_id, num, str(viewport),
                                          "screenshot_after.png", src.read_bytes())
                 entries.append({**saved, "kind": "screenshot_after"})
-                if num == 1 or not any(
-                        e["kind"] == "screenshot_before" and e["viewport"] == saved["viewport"]
-                        for e in entries):
-                    before = store.save_bytes(run_id, 0, str(viewport),
-                                              "screenshot_before.png", src.read_bytes())
-                    entries.append({**before, "kind": "screenshot_before"})
             except Exception:
                 continue
 
@@ -722,11 +651,15 @@ def persist_run_telemetry(state: Any, store: Optional[ArtifactStore] = None) -> 
         "artifacts": entries,
         "updated_at": str(getattr(state, "updated_at", "") or ""),
     }
-    # Guarantee all screenshots, masks, and overlays exist for both before and after
-    if not any(e.get("kind") == "screenshot_before" for e in entries) or \
-       (is_res and not any(e.get("kind") == "screenshot_after" for e in entries)):
-        entries.extend(_synthetic_overlay_entries(store, run_id, anomalies, is_resolved=is_res))
-
+    # Link the real capture files SENSE/VERIFY already wrote to disk
+    # (screenshot/mask/overlay PNGs) into the record; nothing is created.
+    try:
+        known_paths = {str(e.get("path")) for e in entries}
+        for e in store.list_artifacts_for_run(run_id):
+            if e["name"].endswith(".png") and str(e.get("path")) not in known_paths:
+                entries.append(e)
+    except Exception:
+        pass
     payload = build_run_payload(run_record, anomalies, attempts_raw, entries)
     run_record["attempts"] = payload["attempts"]
     run_record["artifacts"] = entries
@@ -755,79 +688,6 @@ def _png_of(img: Any) -> bytes:
     return buf.getvalue()
 
 
-def _synthetic_canvas(width: int, height: int, anomalies: Sequence[Dict[str, Any]],
-                      viewport: str) -> Any:
-    """Neutral stub-mode canvas with B_DOM outlines only (no fake masks)."""
-    from PIL import Image, ImageDraw
-
-    img = Image.new("RGB", (width, height), (11, 12, 16))
-    d = ImageDraw.Draw(img)
-    d.text((10, 10), f"synthetic (stub mode) · {viewport} {width}x{height}",
-           fill=(161, 161, 170))
-    for a in anomalies or []:
-        box = a.get("bounding_box") or a.get("b_dom_box") or {}
-        try:
-            x, y = float(box.get("x", 0)), float(box.get("y", 0))
-            w, h = float(box.get("width", 0)), float(box.get("height", 0))
-        except (TypeError, ValueError):
-            continue
-        if w > 0 and h > 0:
-            d.rectangle([x, y, x + w, y + h], outline=(0, 240, 255), width=2)
-    return img
-
-
-def _synthetic_overlay_entries(store: ArtifactStore, run_id: str,
-                               anomalies: Sequence[Dict[str, Any]],
-                               is_resolved: bool = True) -> List[Dict[str, Any]]:
-    from backend.core.visual_renderer import render_realistic_viewport, png_bytes, mask_png_bytes
-    from backend.browser.overlay import render_overlay_image
-    from backend.browser.schemas import DefectRegion
-
-    entries: List[Dict[str, Any]] = []
-    for viewport in ("mobile", "desktop"):
-        w, h = VIEWPORT_DIMS[viewport]
-        # 1. Baseline Before (attempt 0)
-        img_b, mask_b = render_realistic_viewport(
-            w, h, viewport=viewport, healed=False, repo_name=run_id, anomalies=anomalies)
-        saved = store.save_bytes(run_id, 0, viewport, "screenshot_before.png", png_bytes(img_b))
-        entries.append({**saved, "kind": "screenshot_before", "synthetic": True})
-
-        saved_m = store.save_bytes(run_id, 0, viewport, "sam_mask.png", mask_png_bytes(mask_b))
-        entries.append({**saved_m, "kind": "sam_mask", "synthetic": True})
-
-        regions = [
-            DefectRegion(element_id=str(a.get("element_id") or "visor-el-04"),
-                         defect_type=a.get("defect_type") or "OCCLUSION",
-                         box=a.get("bounding_box") or {"x": 14.0, "y": 212.0, "width": 346.0, "height": 60.0})
-            for a in (anomalies or []) if str(a.get("viewport") or "").startswith("375") or viewport == "mobile"
-        ]
-        if not regions and viewport == "mobile":
-            regions = [DefectRegion(element_id="visor-el-04", defect_type="OCCLUSION",
-                                    box={"x": 14.0, "y": 212.0, "width": 346.0, "height": 60.0})]
-        try:
-            overlay = render_overlay_image(img_b, regions, [mask_b > 0] * len(regions))
-            saved_o = store.save_bytes(run_id, 0, viewport, "overlay.png", png_bytes(overlay))
-            entries.append({**saved_o, "kind": "overlay", "synthetic": True})
-        except Exception:
-            pass
-
-        # 2. Healed After (attempt 1)
-        if is_resolved:
-            img_a, mask_a = render_realistic_viewport(
-                w, h, viewport=viewport, healed=True, repo_name=run_id, anomalies=anomalies)
-            saved_a = store.save_bytes(run_id, 1, viewport, "screenshot_after.png", png_bytes(img_a))
-            entries.append({**saved_a, "kind": "screenshot_after", "synthetic": True})
-            saved_ma = store.save_bytes(run_id, 1, viewport, "sam_mask.png", mask_png_bytes(mask_a))
-            entries.append({**saved_ma, "kind": "sam_mask", "synthetic": True})
-            try:
-                overlay_a = render_overlay_image(img_a, [], [])
-                saved_oa = store.save_bytes(run_id, 1, viewport, "overlay.png", png_bytes(overlay_a))
-                entries.append({**saved_oa, "kind": "overlay", "synthetic": True})
-            except Exception:
-                pass
-    return entries
-
-
 def capture_sense_artifacts(
     run_id: str,
     attempt: int,
@@ -838,14 +698,15 @@ def capture_sense_artifacts(
     """Write Sense/Verify screenshot + SAM mask bytes for one attempt.
 
     ``captured`` maps viewport name -> {"screenshot": bytes|None,
-    "masks": [2D arrays], "boxes": [{x,y,width,height}], "element_ids": [...]}.
-    Real bytes are stored verbatim; missing bytes fall back to a realistic
-    visual viewport render. Mask unions are stored as binary PNGs; overlays
-    are composited by ``backend.browser.overlay``.
+    "masks": [2D arrays], ...} from a real Playwright capture. Only real
+    bytes are stored, verbatim, and flagged ``synthetic: False``. A
+    missing or undecodable screenshot produces no entry at all — the
+    frontend renders its honest "unavailable" state instead of a fake.
+    Mask unions are stored as binary PNGs; overlays composite the real
+    screenshot with real anomaly boxes only.
     """
     import numpy as np
     from PIL import Image
-    from backend.core.visual_renderer import render_realistic_viewport, png_bytes
 
     store = store or ArtifactStore()
     run_id = validate_run_id(str(run_id or ""))
@@ -854,25 +715,15 @@ def capture_sense_artifacts(
     for viewport, (w, h) in VIEWPORT_DIMS.items():
         cap = captured.get(viewport) or {}
         shot = cap.get("screenshot")
-        synthetic = not (isinstance(shot, (bytes, bytearray)) and len(shot) > 0)
-        auto_mask = None
-        if synthetic:
-            img, auto_mask = render_realistic_viewport(
-                w, h, viewport=viewport, healed=(attempt > 0),
-                repo_name=run_id, anomalies=anomalies)
-            shot_bytes = png_bytes(img)
-        else:
-            shot_bytes = bytes(shot)
-            try:
-                img = Image.open(__import__("io").BytesIO(shot_bytes)).convert("RGB")
-            except Exception:
-                img, auto_mask = render_realistic_viewport(
-                    w, h, viewport=viewport, healed=(attempt > 0),
-                    repo_name=run_id, anomalies=anomalies)
-                shot_bytes = png_bytes(img)
-                synthetic = True
+        if not (isinstance(shot, (bytes, bytearray)) and len(shot) > 0):
+            continue
+        shot_bytes = bytes(shot)
+        try:
+            img = Image.open(__import__("io").BytesIO(shot_bytes)).convert("RGB")
+        except Exception:
+            continue
         saved = store.save_bytes(run_id, attempt, viewport, f"{kind}.png", shot_bytes)
-        entries.append({**saved, "kind": kind, "synthetic": synthetic})
+        entries.append({**saved, "kind": kind, "synthetic": False})
 
         masks = cap.get("masks") or []
         arrays = []
@@ -883,39 +734,34 @@ def capture_sense_artifacts(
                     arrays.append(arr > 0)
             except Exception:
                 continue
-        if not arrays and auto_mask is not None:
-            arrays.append(auto_mask > 0)
+        if not arrays:
+            continue
+        union = arrays[0].copy()
+        for arr in arrays[1:]:
+            union |= arr
+        mask_img = Image.fromarray((union * 255).astype(np.uint8), mode="L")
+        saved = store.save_bytes(run_id, attempt, viewport, "sam_mask.png",
+                                 _png_of(mask_img))
+        entries.append({**saved, "kind": "sam_mask", "synthetic": False})
+        try:
+            from backend.browser.overlay import render_overlay_image
+            from backend.browser.schemas import DefectRegion
 
-        if arrays:
-            union = arrays[0].copy()
-            for arr in arrays[1:]:
-                union |= arr
-            mask_img = Image.fromarray((union * 255).astype(np.uint8), mode="L")
-            saved = store.save_bytes(run_id, attempt, viewport, "sam_mask.png",
-                                     _png_of(mask_img))
-            entries.append({**saved, "kind": "sam_mask", "synthetic": synthetic})
-            try:
-                from backend.browser.overlay import render_overlay_image
-                from backend.browser.schemas import DefectRegion
-
-                regions = []
-                for a in anomalies or []:
-                    box = a.get("bounding_box") or a.get("b_dom_box")
-                    if isinstance(box, dict):
-                        regions.append(DefectRegion(
-                            element_id=str(a.get("element_id") or ""),
-                            defect_type=a.get("defect_type"), box=box))
-                if not regions and viewport == "mobile":
+            regions = []
+            for a in anomalies or []:
+                box = a.get("bounding_box") or a.get("b_dom_box")
+                if isinstance(box, dict):
                     regions.append(DefectRegion(
-                        element_id="visor-el-04", defect_type="OCCLUSION",
-                        box={"x": 14.0, "y": 212.0, "width": 346.0, "height": 60.0},
-                    ))
-                overlay = render_overlay_image(img, regions, arrays[:len(regions)])
-                saved = store.save_bytes(run_id, attempt, viewport, "overlay.png",
-                                         _png_of(overlay))
-                entries.append({**saved, "kind": "overlay", "synthetic": synthetic})
-            except Exception:
-                pass
+                        element_id=str(a.get("element_id") or ""),
+                        defect_type=a.get("defect_type"), box=box))
+            if not regions:
+                continue
+            overlay = render_overlay_image(img, regions, arrays[:len(regions)])
+            saved = store.save_bytes(run_id, attempt, viewport, "overlay.png",
+                                     _png_of(overlay))
+            entries.append({**saved, "kind": "overlay", "synthetic": False})
+        except Exception:
+            pass
     return entries
 
 

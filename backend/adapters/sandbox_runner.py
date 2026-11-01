@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
 import os
 import shutil
@@ -22,6 +23,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# Playwright resolves its browser registry when the driver starts, so
+# point it at the /tmp install (when present) before anything launches.
+if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH") and Path("/tmp/ms-playwright").is_dir():
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/tmp/ms-playwright"
+
 from backend.sandbox.interface import SandboxRunner as SandboxRunnerStrategy, ServerState
 from backend.sandbox.local_runner import LocalSandboxRunner, _free_port
 from backend.sandbox.modal_runner import ModalSandboxRunner
@@ -30,43 +36,22 @@ logger = logging.getLogger("visorqa.sandbox_runner")
 
 EXCLUDED_DIRS = {".git", "node_modules", ".next", "dist", "build",
                  "__pycache__", ".visor-snapshots", ".venv", "venv", "artifacts"}
-CANONICAL_FIXTURE = {
-    "src/components/PromoBanner.tsx": (
-        'import React from "react";\n\n'
-        "export function PromoBanner() {\n  return (\n"
-        '    <div className="fixed top-0 z-50 promo-banner">\n'
-        "      <span>Sale ends soon</span>\n    </div>\n  );\n}\n"),
-    "src/app/checkout/CheckoutPage.tsx": (
-        'import React from "react";\n'
-        'import { PromoBanner } from "../../components/PromoBanner";\n'
-        'import { Button } from "../../components/ui/Button";\n\n'
-        "export function CheckoutPage() {\n  return (\n    <main>\n"
-        "      <PromoBanner />\n      <h1>Checkout</h1>\n"
-        "      <Button>Pay now</Button>\n    </main>\n  );\n}\n"),
-    "src/components/ui/Button.tsx": (
-        'import React from "react";\n\n'
-        "export function Button({ children }: { children: React.ReactNode }) {\n"
-        '  return <button className="ui-button">{children}</button>;\n}\n'),
-    "package.json": '{"name": "demo-target-app", "private": true, "scripts": {"dev": "python3 -m http.server 3001 --bind 127.0.0.1"}}\n',
-    "index.html": (
-        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
-        "<title>Demo Target</title></head><body>\n"
-        '<div class="promo-banner" data-visor-el-id="visor-el-01">'
-        "<span>Sale ends soon</span></div>\n"
-        '<main><h1>Checkout</h1>'
-        '<button class="checkout-cta" data-visor-el-id="visor-el-04">Pay now</button>\n'
-        '<a href="/checkout">Continue</a><input placeholder="Email"></main>\n'
-        "</body></html>\n"),
-}
 SAFE_CHROMIUM_ARGS = ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
 _GEOMETRY_JS = """() => {
-  const sels = 'button,a[href],input,select,textarea,header,nav,[data-visor-el-id],[class*="card" i],article,main,h1';
+  const sels = 'button,a[href],input,select,textarea,header,nav,[data-visor-id],[data-visor-el-id],[class*="card" i],article,main,h1';
   const seen = new Set(); const out = [];
+  const usedIds = new Set(Array.from(document.querySelectorAll('[data-visor-id],[data-visor-el-id]')).map((e) => e.getAttribute('data-visor-id') || e.getAttribute('data-visor-el-id')).filter(Boolean));
+  let seq = 1;
   document.querySelectorAll(sels).forEach((el, i) => {
     if (seen.has(el)) return; seen.add(el);
     const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
     if (cs.display === 'none' || cs.visibility === 'hidden' || r.width <= 0 || r.height <= 0) return;
-    const id = el.getAttribute('data-visor-el-id') || ('visor-el-' + String(out.length+1).padStart(2,'0'));
+    const visorTagged = el.hasAttribute('data-visor-id') || el.hasAttribute('data-visor-el-id');
+    let id = el.getAttribute('data-visor-id') || el.getAttribute('data-visor-el-id');
+    if (!id) {
+      do { id = 'visor-el-' + String(seq++).padStart(2,'0'); } while (usedIds.has(id));
+      usedIds.add(id);
+    }
     el.setAttribute('data-visor-el-id', id);
     // Real visibility measurement: sample points inside the element box
     // (clipped to the viewport) and count how many hit-test to this
@@ -89,7 +74,7 @@ _GEOMETRY_JS = """() => {
       }
     }
     const visibilityRatio = vrTotal ? vrHits / vrTotal : 0;
-    out.push({element_id: id, visor_el_id: id, tag: el.tagName.toLowerCase(),
+    out.push({element_id: id, visor_el_id: id, visor_tagged: visorTagged, tag: el.tagName.toLowerCase(),
       visibility_ratio: visibilityRatio, v_r: visibilityRatio,
       bounding_box: {x: r.x, y: r.y, width: r.width, height: r.height},
       b_dom_box: {x: r.x, y: r.y, width: r.width, height: r.height},
@@ -110,17 +95,6 @@ def _port_free(port: int) -> bool:
             return True
         except OSError:
             return False
-
-
-def ensure_target_fixture(source: Path) -> Path:
-    """Create canonical target files under ``source`` only if missing."""
-    source.mkdir(parents=True, exist_ok=True)
-    for rel, content in CANONICAL_FIXTURE.items():
-        target = source / rel
-        if not target.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-    return source
 
 
 def list_repository_files(root: Path) -> List[str]:
@@ -176,7 +150,7 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
         if src.resolve() == workdir.resolve():
             return
         if not src.is_dir() or not any(src.iterdir()):
-            ensure_target_fixture(src)
+            return super()._prepare_checkout(workdir, str(src), repo_url, branch, commit_sha)
         if (src / ".git").exists():
             # Fast detached worktree; fall back to the clone/copy path.
             try:
@@ -298,6 +272,54 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
         if workdir and (workdir / "index.html").is_file() and not (workdir / "node_modules" / "next").exists():
             return [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1", "--directory", str(workdir)]
         return super()._default_dev_command(port)
+
+    # -- real dependency install with per-lockfile cache ----------------
+    def _ensure_node_deps(self) -> None:
+        """Install the target app's real dependencies before boot.
+
+        Cache key is the package-lock.json (else package.json) hash under
+        /tmp/visorqa_deps_cache: a hit symlinks node_modules in <1s, a
+        miss runs the real install once and populates the cache. Failure
+        raises with the installer output — the run then fails honestly
+        instead of rendering a fake page.
+        """
+        import hashlib
+
+        workdir = self.working_dir
+        if workdir is None:
+            return
+        pkg = workdir / "package.json"
+        if not pkg.is_file() or (workdir / "node_modules").exists():
+            return
+        lock = workdir / "package-lock.json"
+        key = hashlib.sha256((lock if lock.is_file() else pkg).read_bytes()).hexdigest()[:16]
+        cache_nm = Path("/tmp/visorqa_deps_cache") / key / "node_modules"
+        if cache_nm.is_dir():
+            (workdir / "node_modules").symlink_to(cache_nm, target_is_directory=True)
+            return
+        cmd = (["npm", "ci", "--no-audit", "--no-fund"] if lock.is_file()
+               else ["npm", "install", "--no-audit", "--no-fund"])
+        env = dict(os.environ, npm_config_cache="/tmp/visorqa_npm_cache")
+        proc = subprocess.run(cmd, cwd=str(workdir), capture_output=True,
+                              text=True, timeout=600, env=env)
+        try:
+            has_deps = bool(json.loads(pkg.read_text(encoding="utf-8")).get("dependencies"))
+        except Exception:
+            has_deps = True
+        if proc.returncode != 0 or (has_deps and not (workdir / "node_modules").is_dir()):
+            tail = (proc.stdout + proc.stderr)[-800:]
+            raise RuntimeError(f"dependency install failed ({' '.join(cmd)}): {tail}")
+        try:
+            cache_nm.parent.mkdir(parents=True, exist_ok=True)
+            if not cache_nm.exists():
+                shutil.copytree(workdir / "node_modules", cache_nm,
+                                symlinks=True)
+        except Exception:
+            pass  # cache is an optimization; the install itself succeeded
+
+    async def start_dev_server(self):  # type: ignore[override]
+        await asyncio.to_thread(self._ensure_node_deps)
+        return await super().start_dev_server()
 
     async def apply_patch(self, patch_text, *, authorized_files=None):
         result = await super().apply_patch(patch_text, authorized_files=authorized_files)
@@ -511,7 +533,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
     async def _provision_e2b(self, state: Any = None) -> Path:
         src = Path(self._source_dir or "./demo-target-app").expanduser()
         if not src.is_dir() or not any(src.iterdir()):
-            src = ensure_target_fixture(src)
+            raise RuntimeError(f"target app source does not exist: {src}")
         try:
             from e2b import Sandbox
             self._sandbox = await asyncio.to_thread(
@@ -692,6 +714,12 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         if self._local_fallback is None:
             await self._fallback_local(None, self._run_id)
         assert self._local_fallback is not None
+        # The fallback workspace has no server yet: boot the real target
+        # app (deps install + dev server) before capturing from it.
+        try:
+            await self._local_fallback.start_dev_server()
+        except Exception:
+            pass
         return await self._local_fallback.extract_dom_geometry(
             viewport_width, viewport_height)
 
@@ -702,6 +730,10 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         if self._local_fallback is None:
             await self._fallback_local(None, self._run_id)
         assert self._local_fallback is not None
+        try:
+            await self._local_fallback.start_dev_server()
+        except Exception:
+            pass
         return await self._local_fallback.capture_screenshot(viewport_width, viewport_height)
 
     # -- lifecycle -----------------------------------------------------------------
@@ -751,7 +783,7 @@ SandboxRunner = SandboxRunnerStrategy
 __all__ = [
     "SandboxRunnerStrategy", "SandboxRunner", "LocalSandboxRunner",
     "LocalWorktreeSandboxRunner", "LocalPlaywrightRunner", "StubSandboxRunner",
-    "ModalSandboxRunner", "EXCLUDED_DIRS", "CANONICAL_FIXTURE",
-    "ensure_target_fixture", "list_repository_files", "launch_chromium",
+    "ModalSandboxRunner", "EXCLUDED_DIRS",
+    "list_repository_files", "launch_chromium",
     "create_sandbox_runner", "get_sandbox_runner",
 ]

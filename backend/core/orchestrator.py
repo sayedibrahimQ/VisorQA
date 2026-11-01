@@ -241,9 +241,32 @@ async def sense_with_playwright_and_sam(
 
     sandbox = sandbox_runner or _default_sandbox()
     sam = sam_client or _default_sam()
+    # Provision the real workspace for the default runner too (injected
+    # runners were provisioned above); capture without it is impossible.
+    if not getattr(sandbox, "working_dir", None):
+        try:
+            if hasattr(sandbox, "ensure_and_inject"):
+                await sandbox.ensure_and_inject(state)
+            elif hasattr(sandbox, "ensure_workspace"):
+                await sandbox.ensure_workspace(state)
+        except Exception:
+            pass
+    # Real capture needs a live target app: boot the sandbox dev server
+    # when it is not already running (idempotent on persistent runners).
+    if hasattr(sandbox, "start_dev_server"):
+        try:
+            _preview = None
+            if hasattr(sandbox, "get_preview_url"):
+                _preview = await sandbox.get_preview_url()
+            if not _preview:
+                await sandbox.start_dev_server()
+        except Exception:
+            pass
     detected: List[Anomaly] = []
     captured_shots: Dict[str, Dict[str, Any]] = {}
     _evidence_items: List[Dict[str, Any]] = []
+    _sensed: List[Dict[str, Any]] = []
+    any_geometry = False
 
     for vp_width, vp_height in VIEWPORTS:
         geometry: List[Dict[str, Any]] = []
@@ -253,52 +276,8 @@ async def sense_with_playwright_and_sam(
             geometry = []
         screenshot: Any = None
         masks: List[Any] = []
-        if not geometry:
-            from backend.core.visual_renderer import render_realistic_viewport, png_bytes
-            vp_name = "mobile" if vp_width == 375 else "desktop"
-            img, mask_arr = render_realistic_viewport(
-                vp_width, vp_height, viewport=vp_name, healed=resense,
-                repo_name=state.repo_full_name or state.repo_name,
-            )
-            screenshot = png_bytes(img)
-            if vp_width == 375:
-                geometry = [
-                    {
-                        "element_id": "visor-el-04",
-                        "selector": ".promo-banner",
-                        "tag": "div",
-                        "bounding_box": {"x": 14.0, "y": 212.0, "width": 346.0, "height": 60.0},
-                        "visibility_ratio": 1.0 if resense else 0.62,
-                        "iou_score": 0.0,
-                        "bleed_px": 0.0,
-                        "viewport": "375px",
-                    },
-                    {
-                        "element_id": "visor-el-01",
-                        "selector": "#cta-primary",
-                        "tag": "button",
-                        "bounding_box": {"x": 16.0, "y": 224.0, "width": 165.0, "height": 42.0},
-                        "visibility_ratio": 1.0 if resense else 0.62,
-                        "iou_score": 0.0,
-                        "bleed_px": 0.0,
-                        "viewport": "375px",
-                    },
-                ]
-                masks = [mask_arr] if not resense else []
-            else:
-                geometry = [
-                    {
-                        "element_id": "visor-el-04",
-                        "selector": ".promo-banner",
-                        "tag": "div",
-                        "bounding_box": {"x": 80.0, "y": 80.0, "width": 1280.0, "height": 36.0},
-                        "visibility_ratio": 1.0,
-                        "iou_score": 0.0,
-                        "bleed_px": 0.0,
-                        "viewport": "1440px",
-                    },
-                ]
-                masks = [mask_arr]
+        if geometry:
+            any_geometry = True
         boxes: List[Dict[str, float]] = []
         for item in geometry:
             box = item.get("bounding_box") or item.get("b_dom_box") or item
@@ -339,6 +318,19 @@ async def sense_with_playwright_and_sam(
             state.repair_spec = _spec
         except Exception:
             pass
+        for _item, _box in zip(geometry, boxes):
+            _css = _item.get("computed_css") or _item.get("computed_styles") or {}
+            _sensed.append({
+                "element_id": str(_item.get("element_id") or _item.get("visor_el_id")
+                                  or _item.get("id") or ""),
+                "bounding_box": _box,
+                "viewport": viewport_label,
+                "tag": _item.get("tag"),
+                "selector": _item.get("selector"),
+                "z_index": _css.get("zIndex") if isinstance(_css, dict) else None,
+                "position": _css.get("position") if isinstance(_css, dict) else None,
+                "visibility_ratio": _item.get("visibility_ratio", _item.get("v_r")),
+            })
         for idx, (item, box) in enumerate(zip(geometry, boxes)):
             element_id = str(
                 item.get("element_id") or item.get("visor_el_id") or item.get("id") or f"visor-el-{idx}"
@@ -395,6 +387,29 @@ async def sense_with_playwright_and_sam(
                             ),
                         )
                     )
+    # Honest capture verdict: no DOM geometry and no screenshot bytes
+    # from either viewport means the target app never really rendered
+    # (clone/boot/server failure). Record it; never fabricate evidence.
+    _captured_any = any(
+        isinstance(v.get("screenshot"), (bytes, bytearray)) and len(v["screenshot"]) > 0
+        for v in captured_shots.values())
+    try:
+        _spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
+        if _sensed:
+            _spec["sensed_elements"] = _sensed
+            if not resense:
+                _spec["baseline_sensed_elements"] = _sensed
+        if any_geometry or _captured_any:
+            _spec["sense_status"] = "captured"
+            _spec.pop("sense_error", None)
+        elif not state.anomalies:
+            _spec["sense_status"] = "capture_failed"
+            _spec["sense_error"] = (
+                "Target app capture produced no DOM geometry or screenshot "
+                "at 375x812/1440x900 (clone, install, or dev-server boot failure)")
+        state.repair_spec = _spec
+    except Exception:
+        pass
     if detected:
         state.anomalies = detected
     if state.anomalies and not getattr(state, "baseline_anomalies", None):
@@ -415,22 +430,6 @@ async def sense_with_playwright_and_sam(
                 _styles[_eid] = _css
             if not _spec.get("lca_dom") and isinstance(_item.get("lca"), dict):
                 _spec["lca_dom"] = _item["lca"]
-        if not _hierarchy and state.anomalies:
-            first_id = state.anomalies[0].element_id or "visor-el-01"
-            _hierarchy = [{
-                "relationship": "selected_pair",
-                "element_ids": [first_id, state.anomalies[0].secondary_el_id or "visor-el-02"],
-                "lca": {"tag": "main"},
-                "lca_found": True,
-            }]
-            _styles[first_id] = {
-                "position": "fixed",
-                "zIndex": "50",
-                "display": "block",
-                "overflow": "visible",
-            }
-            if not _spec.get("lca_dom"):
-                _spec["lca_dom"] = {"tag": "main", "element_id": "visor-el-lca"}
         if _hierarchy:
             _spec["hierarchy"] = _hierarchy[:20]
         if _styles:
@@ -540,14 +539,6 @@ async def triage_files_muse_spark(
         enforced.target_files = [
             f for f in state.target_files if not _is_protected(f)
         ][:2] if not context.get("repository_files") else enforced.target_files
-    if not enforced.target_files and context.get("repository_files"):
-        candidates = [
-            f for f in context["repository_files"]
-            if not _is_protected(f)
-        ]
-        if candidates:
-            enforced.target_files = [candidates[0]]
-            enforced.status = "resolved"
 
     state.target_files = list(enforced.target_files)
     merged = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
@@ -566,7 +557,7 @@ async def triage_files_muse_spark(
     _tree = context.get("repository_files") or []
     merged["token_reduction_ratio"] = round(
         min(1.0, max(0.0, 1.0 - len(state.target_files) / max(len(_tree), 1))), 4
-    ) if _tree else 0.885
+    ) if _tree else None
     if triage_error:
         merged["triage_error"] = triage_error
     state.repair_spec = merged
@@ -594,7 +585,6 @@ async def diagnose_muse_wonder(
     from backend.core.diagnose import (
         DIAGNOSIS_FIELDS,
         PROTECTED_TRIAGE_KEYS,
-        authorized_targets,
         build_diagnosis_context,
         validate_repair_spec,
     )
@@ -624,26 +614,9 @@ async def diagnose_muse_wonder(
                 RepairSpec.model_validate(raw)
             validated = validate_repair_spec(spec_model, state)
         except Exception as exc:
-            safe_targets = authorized_targets(state)
-            if safe_targets:
-                spec_model = RepairSpec(
-                    root_cause=f"{first.defect_type.value if first else 'OCCLUSION'} on {first.element_id if first else 'visor-el-01'}",
-                    affected_selectors=[first.element_id if first else "visor-el-01"],
-                    target_file=safe_targets[0],
-                    css_strategy="Scope mobile layout to avoid collision and preserve desktop constraints",
-                    desktop_preservation_constraints=["Preserve desktop 1440px viewport layout unchanged"],
-                    forbidden_hacks=["!important", "z-index: 9999"],
-                )
-                try:
-                    validated = validate_repair_spec(spec_model, state)
-                except Exception:
-                    merged["diagnose_status"] = "error"
-                    merged["diagnose_error"] = f"{type(exc).__name__}: {exc}"[:200]
-                    return finalize()
-            else:
-                merged["diagnose_status"] = "error"
-                merged["diagnose_error"] = f"{type(exc).__name__}: {exc}"[:200]
-                return finalize()
+            merged["diagnose_status"] = "error"
+            merged["diagnose_error"] = f"{type(exc).__name__}: {exc}"[:200]
+            return finalize()
         data = validated.model_dump()
         for key in DIAGNOSIS_FIELDS:
             merged[key] = data[key]
@@ -855,22 +828,7 @@ async def patch_muse_code_and_apply(
         patch = authorize_patch(parsed, state, target)
         check_patch_policy(normalized)
     except Exception as exc:
-        logger.warning(
-            f"Muse Code patch proposal unavailable ({exc}); synthesizing context-verified diff for {target}")
-        src_lines = snapshot.text.split("\n")
-        ctx_lines = [line for line in src_lines[:10] if line.strip()][:2]
-        if not ctx_lines:
-            ctx_lines = src_lines[:1] or [""]
-        count = len(ctx_lines)
-        diff_body = "".join(f" {line}\n" for line in ctx_lines) + "+// VisorQA: layout container adjustment for mobile viewport\n"
-        fallback_diff = f"--- a/{target}\n+++ b/{target}\n@@ -1,{count} +1,{count + 1} @@\n{diff_body}"
-        try:
-            normalized = normalize_diff(fallback_diff)
-            parsed = parse_unified_diff(normalized)
-            patch = authorize_patch(parsed, state, target)
-            check_patch_policy(normalized)
-        except Exception as synth_err:
-            return fail(f"Patch synthesis failed: {synth_err}")
+        return fail(f"Muse Code patch proposal failed: {exc}")
 
     try:
         if sandbox_status is not None and getattr(sandbox_status, "working_dir", ""):
@@ -979,7 +937,6 @@ async def verify_with_sam(
             screenshot_refs = dict(spec0["screenshot_refs"])
 
     remaining: List[Anomaly] = list(state.anomalies)
-    legacy_no_defects = False
     if raw_metrics is None and existing is not None and existing.verified_vr is not None:
         bleed = existing.verified_bleed_px if existing.verified_bleed_px is not None else 0.0
         raw_metrics = {
@@ -989,15 +946,9 @@ async def verify_with_sam(
                         "iou": existing.verified_iou if existing.verified_iou is not None else 0.0, "delta_x": bleed},
         }
     elif raw_metrics is None and existing is not None:
-        # Recorded attempt without metrics: its passed flag is honoured
-        # only as failure unless it explicitly passed (legacy contract).
-        if existing.passed:
-            raw_metrics = {"mobile": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0},
-                           "desktop": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0}}
-        else:
-            m = metrics_from_anomalies(state.anomalies)
-            raw_metrics = m if m else {"mobile": {"v_r": 0.0, "iou": 0.0, "delta_x": 0.0},
-                                       "desktop": {"v_r": 0.0, "iou": 0.0, "delta_x": 0.0}}
+        # Recorded attempt without metrics: only real anomaly-derived
+        # metrics may judge it; a passed flag alone fabricates nothing.
+        raw_metrics = metrics_from_anomalies(state.anomalies) or None
     elif raw_metrics is None:
         before = list(state.anomalies)
         sense_fn = globals().get("sense_with_playwright_and_sam", sense_with_playwright_and_sam)
@@ -1010,21 +961,13 @@ async def verify_with_sam(
         spec1 = state.repair_spec if isinstance(state.repair_spec, dict) else {}
         raw_metrics = spec1.get("viewport_evaluations") or spec1.get("viewport_metrics")
         if not raw_metrics:
-            m = metrics_from_anomalies(remaining)
-            if m and not state.current_patch:
-                raw_metrics = m
-            elif not remaining or (state.current_patch and is_patch_safe(state.current_patch)):
-                # Patch applied cleanly; defects resolved.
-                legacy_no_defects = True
-                raw_metrics = {"mobile": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0},
-                               "desktop": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0}}
-            else:
-                raw_metrics = m
+            # Only real re-capture evidence (viewport_evaluations from
+            # SENSE) or real remaining-anomaly metrics may judge the
+            # patch. No evidence -> invalid verification, never a pass.
+            raw_metrics = metrics_from_anomalies(remaining) or None
 
     result = evaluate_dual_viewport(raw_metrics)
     viewports = result["viewports"]
-    if legacy_no_defects:
-        result = {**result, "legacy_no_defects": True}
     passed = bool(result["passed"])
     score = result["score"]
     reasons: List[str] = list(result["failure_reasons"])
@@ -1099,8 +1042,7 @@ async def verify_with_sam(
         state.is_resolved = True
         state.transition_to(FSMStep.VERIFY, RunStatus.RESOLVED)
     else:
-        if not legacy_no_defects:
-            state.anomalies = remaining
+        state.anomalies = remaining
         state.is_resolved = False
     return state
 
@@ -1297,6 +1239,19 @@ async def _drive_fsm(
         state = await orchestrator.step_1_sense(state)
         if use_events:
             await _broadcast(event_broadcast, "SENSE_COMPLETE", state)
+
+        _sense_failed = (
+            isinstance(state.repair_spec, dict)
+            and state.repair_spec.get("sense_status") == "capture_failed")
+        if _sense_failed:
+            # No real capture: honest failure, never a no-defect pass.
+            state.is_resolved = False
+            state.transition_to(FSMStep.VERIFY, RunStatus.FAILED)
+            if use_events:
+                await _broadcast(event_broadcast, "RUN_HALTED", state)
+            else:
+                await orchestrator.emit_update(state)
+            return state
 
         if not state.anomalies:
             state.is_resolved = True

@@ -18,6 +18,13 @@ from backend.core.orchestrator import VisorOrchestrator, run_visor_agent
 import backend.core.orchestrator as orchestrator_module
 
 
+@pytest.fixture(autouse=True)
+def _stub_sandbox(monkeypatch):
+    from backend.config import settings
+    monkeypatch.setattr(settings, "SANDBOX_PROVIDER", "stub")
+    monkeypatch.setattr(settings, "SANDBOX_BACKEND", "stub")
+
+
 def make_sample_anomaly() -> Anomaly:
     return Anomaly(
         element_id="visor-el-sample",
@@ -42,7 +49,12 @@ def make_test_state(**kwargs) -> AgentState:
 
 @pytest.mark.asyncio
 async def test_fsm_five_node_resolution_flow():
-    """Verify standard 5-node progression: SENSE -> TRIAGE -> DIAGNOSE -> PATCH -> VERIFY."""
+    """Verify standard 5-node progression: SENSE -> TRIAGE -> DIAGNOSE -> PATCH -> VERIFY.
+
+    Default stub adapters produce no real browser re-capture, so the
+    honest outcome is three failed strikes and RUN_HALTED — verification
+    never fabricates a pass.
+    """
     state = make_test_state(anomalies=[make_sample_anomaly()])
     events = []
 
@@ -51,18 +63,18 @@ async def test_fsm_five_node_resolution_flow():
 
     final = await run_visor_agent(state, ws_broadcast=broadcast)
 
-    assert final.is_resolved is True
-    assert final.attempt == 1
-    assert final.status == RunStatus.RESOLVED
-    assert len(final.attempts) == 1
-    assert final.attempts[0].passed is True
+    assert final.is_resolved is False
+    assert final.attempt == 3
+    assert final.status == RunStatus.FAILED
+    assert len(final.attempts) == 3
+    assert all(a.passed is not True for a in final.attempts)
 
     # Verify event sequence
     assert "SENSE_STARTED" in events
     assert "SENSE_COMPLETE" in events
     assert "TRIAGE_COMPLETE" in events
     assert "ATTEMPT_1_FEEDBACK" in events
-    assert "RUN_RESOLVED" in events
+    assert "RUN_HALTED" in events
 
 
 @pytest.mark.asyncio

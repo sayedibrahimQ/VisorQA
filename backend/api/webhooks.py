@@ -341,6 +341,27 @@ async def handle_github_webhook(
                      "delivery_id": delivery_id},
         )
 
+    # Push events carry no PR number: resolve the open PR for the branch
+    # from GitHub. No open PR means no run — never a PR #0 placeholder.
+    if not pr_number:
+        try:
+            from backend.api.auth import resolve_github_token
+            from backend.api.routes_ws import resolve_branch_pr
+
+            resolved = await resolve_github_token(None)
+            found = await resolve_branch_pr(
+                repo_full_name, branch, resolved[0] if resolved else "")
+            pr_number = int(found.get("pr_number") or 0)
+            pr_title = str(found.get("pr_title") or pr_title or "")
+        except Exception as exc:
+            logger.warning(f"Push PR resolution failed: {exc}")
+        if not pr_number:
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={"status": "ignored", "reason": "no_open_pr_for_branch",
+                         "delivery_id": delivery_id},
+            )
+
     # 5. Initialize & Persist in PostgreSQL (with delivery_id idempotency)
     t_db_start = time.perf_counter()
     run_id: Optional[str] = None

@@ -56,6 +56,7 @@ async def test_hydrate_github_api_materialization(tmp_path, monkeypatch):
 
     monkeypatch.setenv("VISORQA_SANDBOX_ROOT", str(tmp_path / "sandboxes"))
     monkeypatch.setattr(worktree, "_local_checkout_root", lambda: None)
+    monkeypatch.setattr(worktree, "_git", lambda args, cwd=None, timeout=180: (1, "mock git fail"))
 
     async def fake_api(method, path, token, client=None, **kwargs):
         if "/pulls/" in path and path.endswith("/files?per_page=100"):
