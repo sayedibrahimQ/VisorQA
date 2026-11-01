@@ -1,23 +1,51 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
     container_name: visorqa-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: visorqa
-      POSTGRES_PASSWORD: visorqa
-      POSTGRES_DB: visorqa
+      POSTGRES_USER: ${POSTGRES_USER:-visorqa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-visorqa}
+      POSTGRES_DB: ${POSTGRES_DB:-visorqa}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U visorqa -d visorqa"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-visorqa} -d ${POSTGRES_DB:-visorqa}"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: visorqa-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-visorqa}:${POSTGRES_PASSWORD:-visorqa}@postgres:5432/${POSTGRES_DB:-visorqa}
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./artifacts:/app/artifacts
+      - ./backend:/app/backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 volumes:
   postgres_data:

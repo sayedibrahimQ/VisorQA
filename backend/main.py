@@ -94,6 +94,7 @@ app.add_api_websocket_route("/ws/mission-control", mission_control_ws_endpoint)
 
 
 @app.get("/health", tags=["System"])
+@app.get("/api/health", tags=["System"])
 async def health_check():
     """System health check endpoint"""
     return {
