@@ -51,6 +51,10 @@ def setup_watched_repo(tmp_path, monkeypatch):
     json_path = tmp_path / "watched_repo.json"
     monkeypatch.setenv("VISORQA_WATCHED_REPO_JSON", str(json_path))
     save_watched_repository("sayedibrahimQ/VisorQA", default_branch="main", webhook_active=True, auto_heal_enabled=True)
+    for t in list(_background_tasks):
+        if not t.done():
+            t.cancel()
+    _background_tasks.clear()
 
 
 @pytest.mark.asyncio
@@ -292,9 +296,10 @@ async def test_database_initialization_failure_returns_500(monkeypatch):
 
     broadcast_called = False
 
-    async def mock_bc(*args, **kwargs):
-        nonlocal broadcast_called
-        broadcast_called = True
+    async def mock_bc(event_type, state):
+        if getattr(state, "pr_number", None) == 999:
+            nonlocal broadcast_called
+            broadcast_called = True
 
     from backend.api import routes_ws
     monkeypatch.setattr(routes_ws, "ws_broadcast", mock_bc)
