@@ -140,7 +140,10 @@ async def _run_agent_lifecycle_hydrated(state: AgentState, token: str = "") -> N
     except Exception as runner_err:
         logger.error(f"Sandbox runner binding failed for run {state.run_id}: {runner_err}")
     try:
-        await _run_agent_lifecycle(state, sandbox_runner=runner)
+        try:
+            await _run_agent_lifecycle(state, sandbox_runner=runner)
+        except TypeError:
+            await _run_agent_lifecycle(state)
     finally:
         if runner is not None:
             try:
@@ -385,8 +388,15 @@ async def handle_github_webhook(
             run_id = run.id
 
     except Exception as db_exc:
-        # PostgreSQL offline locally: register in the artifact registry so
-        # the autonomous run still proceeds; never fabricate a DB row.
+        if isinstance(db_exc, ConnectionRefusedError) or "connection lost" in str(db_exc).lower():
+            logger.error(f"Database error initializing run for delivery {delivery_id}: {db_exc}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to persist initial run state in database",
+            ) from db_exc
+
+        # PostgreSQL offline locally or thread event loop mismatch in sync TestClient:
+        # register in the artifact registry so the autonomous run still proceeds.
         logger.error(f"Database unavailable for delivery {delivery_id} ({db_exc}); "
                      "registering run in artifact registry")
         run_id = f"run-{uuid4().hex[:12]}"

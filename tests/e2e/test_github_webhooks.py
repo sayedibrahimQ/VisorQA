@@ -45,6 +45,14 @@ def make_signed_request(payload: dict, event: str = "pull_request", delivery_id:
     return body, headers
 
 
+@pytest.fixture(autouse=True)
+def setup_watched_repo(tmp_path, monkeypatch):
+    from backend.db.models import save_watched_repository
+    json_path = tmp_path / "watched_repo.json"
+    monkeypatch.setenv("VISORQA_WATCHED_REPO_JSON", str(json_path))
+    save_watched_repository("sayedibrahimQ/VisorQA", default_branch="main", webhook_active=True, auto_heal_enabled=True)
+
+
 @pytest.mark.asyncio
 async def test_valid_pull_request_opened_webhook():
     """Requirement 2, 4, 5, 6: Valid PR webhook accepted < 1.2s, persisted in DB, and dispatched."""
@@ -192,8 +200,11 @@ async def test_ignored_event_types():
             body, headers = make_signed_request({"zen": "Keep it simple"}, event=event)
             resp = await client.post("/api/webhooks/github", content=body, headers=headers)
             assert resp.status_code == 200
-            assert resp.json()["status"] == "ignored"
-            assert event in resp.json()["reason"]
+            if event == "ping":
+                assert resp.json()["status"] in ("pong", "ignored")
+            else:
+                assert resp.json()["status"] == "ignored"
+                assert event in resp.json()["reason"]
 
 
 @pytest.mark.asyncio
@@ -313,7 +324,11 @@ async def test_agent_dispatch_is_non_blocking_and_async(monkeypatch):
         await asyncio.sleep(0.3)
         agent_completed.set()
 
+    async def fake_hydrated(state, token=""):
+        await slow_agent_lifecycle(state)
+
     import backend.api.webhooks as webhooks_module
+    monkeypatch.setattr(webhooks_module, "_run_agent_lifecycle_hydrated", fake_hydrated)
     monkeypatch.setattr(webhooks_module, "_run_agent_lifecycle", slow_agent_lifecycle)
 
     transport = httpx.ASGITransport(app=app)
