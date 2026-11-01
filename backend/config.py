@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     API_PORT: int = Field(default=8000)
     ENVIRONMENT: str = Field(default="development")
     LOG_LEVEL: str = Field(default="info")
-    FRONTEND_URL: str = Field(default="http://localhost:3000")
+    FRONTEND_URL: str = Field(default="https://visorqa.sayedibrahim.com")
 
     # Mathematical Constants & QA Thresholds
     V_R_THRESHOLD: float = Field(

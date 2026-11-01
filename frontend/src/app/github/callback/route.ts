@@ -18,11 +18,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${frontendOrigin}/mission-control?auth_error=missing_code`);
   }
 
-  const backendUrl = (
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-  ).replace(/\/$/, "");
-
-  const callbackUrl = new URL(`${backendUrl}/api/auth/github/callback`);
+  const callbackUrl = new URL("/api/auth/github/callback", frontendOrigin);
   callbackUrl.searchParams.set("code", code);
   if (state) {
     callbackUrl.searchParams.set("state", state);
