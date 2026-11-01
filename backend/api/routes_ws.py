@@ -600,6 +600,7 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
                     "target_files": run.target_files or [],
                     "is_resolved": run.is_resolved,
                     "best_score": run.best_score,
+                    "best_patch": run.best_patch,
                     "created_at": run.created_at.isoformat() if run.created_at else None,
                     "updated_at": run.updated_at.isoformat() if run.updated_at else None,
                 }
@@ -642,6 +643,14 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
                 store = ArtifactStore()
                 record = store.get_run_record(run_id)
                 entries = record.get("artifacts", []) if record else []
+                if record:
+                    run_dict["best_patch"] = run_dict.get("best_patch") or record.get("best_patch")
+                    run_dict["current_patch"] = run_dict.get("current_patch") or record.get("current_patch")
+                    run_dict["repair_spec"] = record.get("repair_spec") or {}
+                    if not attempt_dicts:
+                        attempt_dicts = record.get("attempts_raw", []) or []
+                    if not anomaly_dicts:
+                        anomaly_dicts = record.get("anomalies", []) or []
                 return build_run_payload(run_dict, anomaly_dicts, attempt_dicts, entries)
     except Exception as e:
         logger.warning(f"Could not load run {run_id} from database: {e}")
