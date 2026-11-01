@@ -20,6 +20,8 @@ interface PRRunSidebarProps {
   error: string | null;
   connectionStatus: string;
   onSelect: (runId: string) => void;
+  onClearRuns?: () => void;
+  clearing?: boolean;
   className?: string;
 }
 
@@ -128,6 +130,8 @@ export function PRRunSidebar({
   error,
   connectionStatus,
   onSelect,
+  onClearRuns,
+  clearing,
   className,
 }: PRRunSidebarProps) {
   const [open, setOpen] = useState(false);
@@ -137,7 +141,7 @@ export function PRRunSidebar({
   const showEmpty = !loading && runs.length === 0 && !error;
 
   const body = (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {error ? (
         <p
           data-testid="sidebar-error"
@@ -239,17 +243,31 @@ export function PRRunSidebar({
         data-testid="pr-run-sidebar"
         data-open={open ? "true" : "false"}
         className={cn(
-          "min-h-0 flex-col rounded-md border border-border-subtle bg-surface-subtle md:flex md:h-full",
+          "min-h-0 flex-col rounded-md border border-border-subtle bg-surface-subtle md:flex md:h-full overflow-hidden",
           open ? "mt-2 flex max-h-[60vh]" : "hidden",
         )}
       >
-        <div className="hidden items-baseline justify-between border-b border-border-subtle px-3 py-2.5 md:flex">
-          <h2 className="font-display text-sm font-semibold text-text-primary">
-            PR Runs
-          </h2>
-          <span data-testid="sidebar-count" className="font-mono text-[11px] text-text-muted">
-            {runs.length} total
-          </span>
+        <div className="hidden shrink-0 items-center justify-between border-b border-border-subtle px-3 py-2.5 md:flex">
+          <div className="flex items-baseline gap-2">
+            <h2 className="font-display text-sm font-semibold text-text-primary">
+              PR Runs
+            </h2>
+            <span data-testid="sidebar-count" className="font-mono text-[11px] text-text-muted">
+              {runs.length} total
+            </span>
+          </div>
+          {onClearRuns ? (
+            <button
+              type="button"
+              data-testid="clear-runs-button"
+              onClick={onClearRuns}
+              disabled={clearing || runs.length === 0}
+              className="rounded px-1.5 py-0.5 font-mono text-[10px] text-text-secondary transition-colors hover:bg-surface hover:text-defect-crimson disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-border-focus"
+              title="Clear old runs from database and storage"
+            >
+              {clearing ? "Clearing…" : "Clear Old Runs"}
+            </button>
+          ) : null}
         </div>
         {body}
       </aside>

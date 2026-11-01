@@ -375,21 +375,67 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Could not load artifact registry runs: {e}")
 
-    # Demo fallback only for the unscoped list when nothing exists at all;
-    # a repository-scoped query must never fall back to fake PRs.
-    if not repo_filter and not any(r["id"] == "run-demo-42" for r in results):
-        results.append({
-            "id": "run-demo-42",
-            "pr_number": 42,
-            "repo_name": "sayedibrahimQ/VisorQA",
-            "branch": "fix/checkout-banner",
-            "commit_sha": "a1b2c3d",
-            "status": "RUNNING",
-            "current_step": "1.SENSE",
-            "strikes": 0,
-            "anomalies_count": 1,
-        })
     return results
+
+
+@router.delete("/runs")
+@router.post("/runs/cleanup")
+async def clear_runs(repo: Optional[str] = None) -> Dict[str, Any]:
+    """Purge runs from the database and artifact store.
+
+    If `?repo={owner}/{repo}` is provided, only runs for that repository are cleared.
+    If omitted, all runs are purged.
+    """
+    repo_filter = (repo or "").strip()
+    deleted_db = 0
+    try:
+        from backend.db.repository import AsyncSessionLocal, PRRun, AttemptRecord, AnomalyRecord
+        from sqlmodel import select, delete
+        async with AsyncSessionLocal() as session:
+            stmt = select(PRRun)
+            if repo_filter:
+                stmt = stmt.where(PRRun.repo_full_name == repo_filter)
+            res = await session.execute(stmt)
+            runs = res.scalars().all()
+            for r in runs:
+                await session.execute(delete(AttemptRecord).where(AttemptRecord.run_id == r.id))
+                await session.execute(delete(AnomalyRecord).where(AnomalyRecord.run_id == r.id))
+                await session.execute(delete(PRRun).where(PRRun.id == r.id))
+                deleted_db += 1
+            await session.commit()
+    except Exception as e:
+        logger.warning(f"Error clearing runs from database: {e}")
+
+    deleted_art = 0
+    try:
+        from backend.core.artifacts import ArtifactStore
+        import shutil
+        store = ArtifactStore()
+        idx_path = store.index_path()
+        if idx_path.exists():
+            data = json.loads(idx_path.read_text(encoding="utf-8"))
+            runs_dict = data.get("runs", {})
+            to_remove = []
+            for run_id, rec in runs_dict.items():
+                rec_repo = rec.get("repo_full_name") or rec.get("repo_name") or ""
+                if not repo_filter or rec_repo == repo_filter:
+                    to_remove.append(run_id)
+            for run_id in to_remove:
+                del runs_dict[run_id]
+                run_folder = store.root / run_id
+                if run_folder.exists() and run_folder.is_dir():
+                    shutil.rmtree(run_folder, ignore_errors=True)
+                deleted_art += 1
+            idx_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Error clearing runs from artifact registry: {e}")
+
+    return {
+        "status": "ok",
+        "deleted_db_runs": deleted_db,
+        "deleted_artifact_runs": deleted_art,
+        "repo": repo_filter or None,
+    }
 
 
 class CreateRunRequest(BaseModel):
