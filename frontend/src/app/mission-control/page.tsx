@@ -65,19 +65,108 @@ export default function MissionControlPage() {
     rehydrate,
     clearRuns,
   } = useMissionControlStream();
+  const apiBase = resolveApiBase();
 
-  // --- Repository scoping (strict: everything below filters by repo) ---
+  // --- Watched repository (Task 1: DB-persisted singleton, strict scope) ---
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+  const [watchedRepo, setWatchedRepo] = useState<{
+    repo_full_name: string;
+    default_branch: string;
+    webhook_active: boolean;
+    auto_heal_enabled: boolean;
+  } | null>(null);
+  const [watchedLoaded, setWatchedLoaded] = useState(false);
+  const [pickerDismissed, setPickerDismissed] = useState(false);
+  const [watchError, setWatchError] = useState<string | null>(null);
   useEffect(() => {
     const param = new URLSearchParams(window.location.search).get("repo");
     if (param) setSelectedRepo(param);
   }, []);
+  // Boot: the DB-persisted watched repo is the source of truth and wins
+  // over any stale ?repo= param.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/settings/watched-repo`, {
+          credentials: "include",
+        });
+        const body: unknown = res.ok ? await res.json().catch(() => null) : null;
+        if (cancelled) return;
+        if (
+          body &&
+          typeof body === "object" &&
+          typeof (body as Record<string, unknown>).repo_full_name === "string"
+        ) {
+          const record = body as {
+            repo_full_name: string;
+            default_branch: string;
+            webhook_active: boolean;
+            auto_heal_enabled: boolean;
+          };
+          setWatchedRepo(record);
+          setSelectedRepo(record.repo_full_name);
+          const url = new URL(window.location.href);
+          url.searchParams.set("repo", record.repo_full_name);
+          window.history.replaceState(null, "", url.toString());
+        }
+      } catch {
+        /* watched state unknown; picker stays available via RepoSelector */
+      } finally {
+        if (!cancelled) setWatchedLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, apiBase]);
   const selectRepo = (repoFullName: string) => {
     setSelectedRepo(repoFullName);
     selectRun(null);
     const url = new URL(window.location.href);
     url.searchParams.set("repo", repoFullName);
     window.history.replaceState(null, "", url.toString());
+    // Persist as THE watched repository (backend validates vs GitHub).
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/settings/watched-repo`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repo_full_name: repoFullName }),
+        });
+        const body: unknown = await res.json().catch(() => null);
+        if (!res.ok) {
+          const detail =
+            body && typeof body === "object" && "detail" in body
+              ? String((body as Record<string, unknown>).detail)
+              : `Could not persist watched repository (${res.status})`;
+          throw new Error(detail);
+        }
+        const record =
+          body && typeof body === "object" && "watched_repo" in body
+            ? (body as Record<string, unknown>).watched_repo
+            : null;
+        if (
+          record &&
+          typeof record === "object" &&
+          typeof (record as Record<string, unknown>).repo_full_name === "string"
+        ) {
+          setWatchedRepo(
+            record as {
+              repo_full_name: string;
+              default_branch: string;
+              webhook_active: boolean;
+              auto_heal_enabled: boolean;
+            },
+          );
+          setWatchError(null);
+        }
+      } catch (err) {
+        setWatchError(err instanceof Error ? err.message : "Could not persist watched repository");
+      }
+    })();
   };
   const scopedRuns = selectedRepo
     ? runs.filter((r) => r.repo_name === selectedRepo)
@@ -95,7 +184,6 @@ export default function MissionControlPage() {
   // the hook's generation guard drops stale in-flight responses.
   const liveKey = `${scopedActiveRun?.status ?? ""}:${scopedActiveRun?.strikes ?? 0}:${lastEventAt ?? ""}`;
   const { details } = useRunDetails(effectiveActiveRunId, { liveKey });
-  const apiBase = resolveApiBase();
 
   const [selectedAttempt, setSelectedAttempt] = useState<number | null>(null);
   useEffect(() => {
@@ -279,6 +367,16 @@ export default function MissionControlPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {selectedRepo ? (
+              <span
+                data-testid="watching-pill"
+                className="rounded-sm border border-laser-cyan/40 bg-surface px-2 py-1.5 font-mono text-[11px] text-text-primary"
+              >
+                {watchedRepo?.repo_full_name === selectedRepo
+                  ? `WATCHING: ${selectedRepo} • ${watchedRepo.webhook_active ? "WEBHOOK ARMED" : "WEBHOOK PENDING"}`
+                  : `NOT WATCHED: ${selectedRepo}`}
+              </span>
+            ) : null}
             <RepoSelector selectedRepo={selectedRepo} onSelect={selectRepo} />
             <div data-testid="user-chip" className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface px-2 py-1.5">
               {user.avatar_url ? (
@@ -298,6 +396,43 @@ export default function MissionControlPage() {
             </div>
           </div>
         </div>
+
+        {watchedLoaded && !watchedRepo && !pickerDismissed ? (
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-4 pt-[10vh]"
+            data-testid="watched-repo-picker"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose the watched repository"
+          >
+            <div className="w-full max-w-md rounded-md border border-border-strong bg-elevated p-4 shadow-2xl">
+              <h2 className="font-display text-base font-semibold text-text-primary">
+                Choose the watched repository
+              </h2>
+              <p className="mt-1 text-xs text-text-secondary">
+                VisorQA monitors exactly one repository. Webhooks for any
+                other repository are ignored; the full 5-node pipeline runs
+                autonomously for this one.
+              </p>
+              <div className="mt-3">
+                <RepoSelector selectedRepo={selectedRepo} onSelect={selectRepo} />
+              </div>
+              {watchError ? (
+                <p role="alert" className="mt-2 font-mono text-[11px] text-defect-crimson">
+                  {watchError}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                data-testid="watched-picker-dismiss"
+                onClick={() => setPickerDismissed(true)}
+                className="mt-3 font-mono text-[11px] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+              >
+                Decide later
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {!selectedRepo ? (
           <p data-testid="repo-onboarding" className="shrink-0 mt-4 rounded-md border border-border-subtle bg-surface px-3 py-2.5 text-sm text-text-secondary">
