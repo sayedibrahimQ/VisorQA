@@ -392,7 +392,7 @@ async def clear_runs(repo: Optional[str] = None) -> Dict[str, Any]:
         async with AsyncSessionLocal() as session:
             stmt = select(PRRun)
             if repo_filter:
-                stmt = stmt.where((PRRun.repo_full_name == repo_filter) | (PRRun.repo_name == repo_filter))
+                stmt = stmt.where(PRRun.repo_full_name == repo_filter)
             res = await session.execute(stmt)
             runs = res.scalars().all()
             for r in runs:
@@ -556,7 +556,7 @@ async def create_run(payload: CreateRunRequest,
         from sqlmodel import select
         async with AsyncSessionLocal() as session:
             stmt = select(PRRun).where(
-                ((PRRun.repo_full_name == repo_full_name) | (PRRun.repo_name == repo_full_name))
+                (PRRun.repo_full_name == repo_full_name)
                 & (PRRun.status.in_(["QUEUED", "PENDING", "WAITING", "RUNNING"]))
             )
             old_runs = (await session.execute(stmt)).scalars().all()
