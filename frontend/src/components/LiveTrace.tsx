@@ -15,7 +15,7 @@ const STEPS: { key: FSMStep; label: string; model: string }[] = [
   { key: "2.TRIAGE", label: "TRIAGE", model: "Muse Spark" },
   { key: "3.DIAGNOSE", label: "DIAGNOSE", model: "Muse Wonder" },
   { key: "4.PATCH", label: "PATCH", model: "Muse Code" },
-  { key: "5.VERIFY", label: "VERIFY", model: "Modal HMR (Strike Loop)" },
+  { key: "5.VERIFY", label: "VERIFY", model: "Playwright + SAM 3.1" },
 ];
 
 export function LiveTrace({
