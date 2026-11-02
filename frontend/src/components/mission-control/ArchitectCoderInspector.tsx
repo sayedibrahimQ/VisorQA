@@ -2,9 +2,10 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { Check, Copy, ExternalLink } from "lucide-react";
+import { Check, Copy, ExternalLink, GitCommit } from "lucide-react";
 import type { InspectorData, BuildState } from "@/lib/telemetryDrawer";
 import { cn } from "@/lib/utils";
+import { resolveApiBase } from "@/hooks/useMissionControlStream";
 
 type TabId = "spec" | "diff";
 
@@ -45,6 +46,62 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     >
       {state === "copied" ? <Check className="h-3 w-3 text-verified-emerald" /> : <Copy className="h-3 w-3" />}
       {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
+    </button>
+  );
+}
+
+function CommitPushButton({ runId, disabled }: { runId: string | null; disabled?: boolean }) {
+  const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [statusMsg, setStatusMsg] = useState<string>("");
+
+  const handlePublish = async () => {
+    if (!runId || state === "loading") return;
+    setState("loading");
+    setStatusMsg("");
+    try {
+      const apiBase = resolveApiBase();
+      const res = await fetch(`${apiBase}/api/runs/${encodeURIComponent(runId)}/publish`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setState("success");
+      setStatusMsg(data.commit_sha ? `Pushed (${data.commit_sha.slice(0, 7)})` : "Pushed to PR");
+      setTimeout(() => setState("idle"), 4000);
+    } catch {
+      setState("error");
+      setStatusMsg("Push failed");
+      setTimeout(() => setState("idle"), 3000);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      data-testid="commit-push-btn"
+      disabled={disabled || !runId || state === "loading"}
+      onClick={handlePublish}
+      aria-label="Commit & Push Fix to PR"
+      className={cn(
+        "flex items-center gap-1.5 rounded-sm border px-2 py-1 font-mono text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus",
+        state === "success"
+          ? "border-verified-emerald/60 bg-verified-emerald/10 text-verified-emerald"
+          : state === "error"
+            ? "border-defect-crimson/60 bg-defect-crimson/10 text-defect-crimson"
+            : state === "loading"
+              ? "border-neural-pulse/60 bg-neural-pulse/10 text-neural-pulse cursor-wait"
+              : "border-verified-emerald/40 bg-verified-emerald/10 text-verified-emerald hover:bg-verified-emerald/20 hover:border-verified-emerald",
+        (!runId || disabled) && "opacity-50 cursor-not-allowed hover:bg-verified-emerald/10",
+      )}
+    >
+      <GitCommit className="h-3 w-3" />
+      {state === "loading"
+        ? "Pushing fix..."
+        : state === "success"
+          ? statusMsg || "Pushed to PR"
+          : state === "error"
+            ? statusMsg || "Push failed"
+            : "Commit & Push Fix to PR"}
     </button>
   );
 }
@@ -120,20 +177,23 @@ export function ArchitectCoderInspector({ data, runId }: ArchitectCoderInspector
     <section aria-label="Architect and coder inspector" data-testid="architect-coder-inspector" className="min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-display text-sm font-semibold text-text-primary">Architect / Coder</h3>
-        {runId ? (
-          <Link
-            data-testid="run-permalink"
-            href={`/runs/${runId}`}
-            className="flex items-center gap-1 font-mono text-[11px] text-neural-pulse hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
-          >
-            /runs/{runId}
-            <ExternalLink className="h-3 w-3" aria-hidden="true" />
-          </Link>
-        ) : (
-          <span data-testid="run-permalink-unavailable" className="font-mono text-[11px] text-text-muted">
-            Permalink unavailable (no run ID)
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {runId ? (
+            <Link
+              data-testid="run-permalink"
+              href={`/runs/${runId}`}
+              className="flex items-center gap-1 font-mono text-[11px] text-neural-pulse hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+            >
+              /runs/{runId}
+              <ExternalLink className="h-3 w-3" aria-hidden="true" />
+            </Link>
+          ) : (
+            <span data-testid="run-permalink-unavailable" className="font-mono text-[11px] text-text-muted">
+              Permalink unavailable (no run ID)
+            </span>
+          )}
+          <CommitPushButton runId={runId} disabled={!data.diff} />
+        </div>
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -280,7 +340,10 @@ export function ArchitectCoderInspector({ data, runId }: ArchitectCoderInspector
                         : "Generated · application unknown"}
                   </span>
                 </span>
-                <CopyButton text={data.diff} label="Unified diff" />
+                <div className="flex items-center gap-1.5">
+                  <CommitPushButton runId={runId} />
+                  <CopyButton text={data.diff} label="Unified diff" />
+                </div>
               </div>
               <div
                 data-testid="diff-body"

@@ -43,7 +43,28 @@ export function useRunDetails(
   const generationRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
+  const detailsRef = useRef<RunDetails | null>(null);
+  detailsRef.current = details;
+
   const refetch = useCallback(() => setNonce((n) => n + 1), []);
+
+  const statusUpper = (details?.status ?? "").toUpperCase();
+  const isActive = Boolean(
+    runId &&
+      details &&
+      !details.is_resolved &&
+      ["RUNNING", "SENSE", "TRIAGE", "PATCH", "DIAGNOSE", "VERIFY", "QUEUED", "PENDING"].some((s) =>
+        statusUpper.includes(s),
+      ),
+  );
+
+  useEffect(() => {
+    if (!isActive) return;
+    const interval = setInterval(() => {
+      refetch();
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [isActive, refetch]);
 
   useEffect(() => {
     if (!runId) {
@@ -57,7 +78,9 @@ export function useRunDetails(
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    setLoading(true);
+    if (!detailsRef.current || detailsRef.current.id !== runId) {
+      setLoading(true);
+    }
 
     (async () => {
       try {
