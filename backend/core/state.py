@@ -227,6 +227,7 @@ class SelfHealingAttempt(BaseModel):
     verification_status: str = ""  # verification_passed|verification_failed|verification_invalid
     metrics_valid: bool = False
     failure_reasons: List[str] = Field(default_factory=list)
+    verification_feedback: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SandboxMetadata(BaseModel):

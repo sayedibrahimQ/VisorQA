@@ -354,12 +354,19 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
     # 1. Commit and push the patched file to the PR branch via Contents API
     if diff:
         targets = _diff_target_files(diff)
+        repo_root = (state.repair_spec or {}).get("repo_root") if (hasattr(state, "repair_spec") and isinstance(state.repair_spec, dict)) else None
         for path in targets:
             try:
                 status, current = await github_api("GET", f"/repos/{repo}/contents/{path}?ref={branch}", tok)
                 if status == 200 and isinstance(current, dict):
-                    source = base64.b64decode(current.get("content", "")).decode("utf-8")
-                    updated = apply_unified_diff(source, diff)
+                    updated = None
+                    if repo_root:
+                        disk_p = Path(repo_root) / path
+                        if disk_p.is_file():
+                            updated = disk_p.read_text(encoding="utf-8")
+                    if updated is None:
+                        source = base64.b64decode(current.get("content", "")).decode("utf-8")
+                        updated = apply_unified_diff(source, diff)
                     put_status, created = await github_api(
                         "PUT", f"/repos/{repo}/contents/{path}", tok,
                         json={
