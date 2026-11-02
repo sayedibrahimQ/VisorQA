@@ -286,6 +286,36 @@ def evidence_tokens(state: AgentState) -> Set[str]:
     if spec.get("lca_element_id"):
         tokens.add(str(spec["lca_element_id"]).lower())
 
+    # Extract tokens from triage summary and evidence
+    triage_text = f"{spec.get('triage_summary', '')} {' '.join(spec.get('evidence') or [])}"
+    for tok in re.findall(r"[\w-]+", triage_text):
+        if len(tok) >= 3:
+            tokens.add(tok.lower())
+
+    # Extract tokens from sensed elements
+    for el in spec.get("sensed_elements") or spec.get("baseline_sensed_elements") or []:
+        if isinstance(el, dict):
+            for k in ("element_id", "visor_el_id", "id", "tag"):
+                if el.get(k):
+                    tokens.add(str(el[k]).lower())
+            for cls in el.get("classes") or []:
+                tokens.add(str(cls).lower())
+
+    # Extract tokens from target files source code
+    root = resolve_repo_root(spec)
+    if root is not None:
+        for target in authorized_targets(state):
+            target_path = root / target
+            if target_path.is_file():
+                try:
+                    src_content = target_path.read_text(encoding="utf-8", errors="replace")[:4000]
+                    for found_id in re.findall(r'id=["\']([\w-]+)["\']', src_content):
+                        tokens.add(found_id.lower())
+                    for found_vid in re.findall(r'data-visor-id=["\']([\w-]+)["\']', src_content):
+                        tokens.add(found_vid.lower())
+                except Exception:
+                    pass
+
     def walk(node: Any) -> None:
         if isinstance(node, dict):
             for key in ("id", "tag", "data-testid", "data_testid"):
@@ -300,6 +330,8 @@ def evidence_tokens(state: AgentState) -> Set[str]:
                 walk(item)
 
     walk(spec.get("lca_dom"))
+    walk(spec.get("hierarchy"))
+    walk(spec.get("lca_records"))
     return {t for t in tokens if len(t) >= 2}
 
 

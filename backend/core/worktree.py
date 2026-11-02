@@ -18,12 +18,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.core.triage import is_protected_path, normalize_path
+
+logger = logging.getLogger("visorqa.worktree")
 
 FRONTEND_EXTS = (".tsx", ".jsx", ".ts", ".js", ".css", ".scss")
 MAX_FILES = 120
@@ -169,6 +172,13 @@ async def hydrate_pr_workspace(
     strategy could materialize files (pipeline then fails closed as
     before — nothing is fabricated).
     """
+    if not token:
+        try:
+            from backend.config import settings as _s
+            token = str(getattr(_s, "GITHUB_PAT", "") or getattr(_s, "GITHUB_TOKEN", "") or "")
+        except Exception:
+            token = ""
+    token = token or os.getenv("GITHUB_PAT", "") or os.getenv("GITHUB_TOKEN", "")
     dest = sandbox_root() / run_id / "app"
     dest.parent.mkdir(parents=True, exist_ok=True)
     branch = branch or "main"
@@ -185,59 +195,73 @@ async def hydrate_pr_workspace(
             pass
 
     # 1) Local checkout match -> isolated git worktree at the PR branch.
-    local = _local_checkout_root()
-    if local is not None and repo_full_name and _origin_matches(local, repo_full_name):
-        if token:
-            try:
-                await asyncio.to_thread(_git, ["fetch", "--quiet", "origin", branch], local, 5)
-            except Exception:
-                pass
-            if pr_number:
+    candidates = [_local_checkout_root()]
+    try:
+        for d in sandbox_root().glob("*/app"):
+            if d.is_dir() and (d / ".git").is_dir():
+                candidates.append(d)
+    except Exception:
+        pass
+    for local in candidates:
+        if local is not None and repo_full_name and _origin_matches(local, repo_full_name):
+            if token:
                 try:
-                    await asyncio.to_thread(
-                        _git, ["fetch", "--quiet", "origin", f"pull/{pr_number}/head:pr-{pr_number}-{run_id[:8]}"],
-                        local, 5)
+                    await asyncio.to_thread(_git, ["fetch", "--quiet", "origin", branch], local, 5)
                 except Exception:
                     pass
-        code, _ = await asyncio.to_thread(
-            _git, ["worktree", "add", "--quiet", "--detach", str(dest),
-                   f"origin/{branch}"], local, 180)
-        if code != 0:
+                if pr_number:
+                    try:
+                        await asyncio.to_thread(
+                            _git, ["fetch", "--quiet", "origin", f"pull/{pr_number}/head:pr-{pr_number}-{run_id[:8]}"],
+                            local, 5)
+                    except Exception:
+                        pass
             code, _ = await asyncio.to_thread(
-                _git, ["worktree", "add", "--quiet", "--detach", str(dest), branch],
-                local, 180)
-        if code != 0 and pr_number:
-            code, _ = await asyncio.to_thread(
-                _git, ["worktree", "add", "--quiet", "--detach", str(dest), f"pr-{pr_number}-{run_id[:8]}"],
-                local, 180)
-        if code == 0 and dest.is_dir():
-            _write_sandbox_marker(dest, run_id, branch)
-            return {"root": str(dest),
-                    "repository_files": _frontend_files(dest, priority),
-                    "strategy": "local_worktree"}
+                _git, ["worktree", "add", "--quiet", "--detach", str(dest),
+                       f"origin/{branch}"], local, 180)
+            if code != 0:
+                code, _ = await asyncio.to_thread(
+                    _git, ["worktree", "add", "--quiet", "--detach", str(dest), branch],
+                    local, 180)
+            if code != 0 and pr_number:
+                code, _ = await asyncio.to_thread(
+                    _git, ["worktree", "add", "--quiet", "--detach", str(dest), f"pr-{pr_number}-{run_id[:8]}"],
+                    local, 180)
+            if code != 0:
+                code, _ = await asyncio.to_thread(
+                    _git, ["worktree", "add", "--quiet", "--detach", str(dest), "HEAD"],
+                    local, 180)
+            if code == 0 and dest.is_dir():
+                _write_sandbox_marker(dest, run_id, branch)
+                return {"root": str(dest),
+                        "repository_files": _frontend_files(dest, priority),
+                        "strategy": "local_worktree"}
 
     # 2) Shallow clone with the caller's token.
     if token and repo_full_name:
-        url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
-        code, _ = await asyncio.to_thread(
-            _git, ["clone", "--quiet", "--depth", "1", "--branch", branch, url, str(dest)],
-            None, 300)
-        if code != 0 and pr_number:
+        try:
+            url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
             code, _ = await asyncio.to_thread(
-                _git, ["clone", "--quiet", "--depth", "1", url, str(dest)],
-                None, 300)
-            if code == 0:
-                await asyncio.to_thread(
-                    _git, ["fetch", "--depth", "1", "origin", f"pull/{pr_number}/head:pr-{pr_number}"],
-                    dest, 180)
-                await asyncio.to_thread(
-                    _git, ["checkout", "--quiet", f"pr-{pr_number}"],
-                    dest, 60)
-        if code == 0 and dest.is_dir():
-            _write_sandbox_marker(dest, run_id, branch)
-            return {"root": str(dest),
-                    "repository_files": _frontend_files(dest, priority),
-                    "strategy": "shallow_clone"}
+                _git, ["clone", "--quiet", "--depth", "1", "--branch", branch, url, str(dest)],
+                None, 20)
+            if code != 0 and pr_number:
+                code, _ = await asyncio.to_thread(
+                    _git, ["clone", "--quiet", "--depth", "1", url, str(dest)],
+                    None, 20)
+                if code == 0:
+                    await asyncio.to_thread(
+                        _git, ["fetch", "--depth", "1", "origin", f"pull/{pr_number}/head:pr-{pr_number}"],
+                        dest, 20)
+                    await asyncio.to_thread(
+                        _git, ["checkout", "--quiet", f"pr-{pr_number}"],
+                        dest, 20)
+            if code == 0 and dest.is_dir():
+                _write_sandbox_marker(dest, run_id, branch)
+                return {"root": str(dest),
+                        "repository_files": _frontend_files(dest, priority),
+                        "strategy": "shallow_clone"}
+        except Exception as exc:
+            logger.warning(f"git clone failed ({exc}); attempting API materialization")
 
     # 3) GitHub API materialization (no git required).
     if token and repo_full_name:

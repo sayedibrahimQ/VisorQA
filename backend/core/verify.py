@@ -135,9 +135,14 @@ def compute_dual_viewport_score(viewports: Dict[str, Dict[str, Any]]) -> Optiona
 
 def metrics_from_anomalies(anomalies: List[Any]) -> Dict[str, Dict[str, Any]]:
     """Worst-case per-viewport metrics from remaining anomalies (legacy sense path)."""
+    def _val(obj: Any, key: str) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key, None)
+
     grouped: Dict[str, List[Any]] = {"mobile": [], "desktop": []}
     for a in anomalies or []:
-        name = viewport_name(getattr(a, "viewport", None))
+        name = viewport_name(_val(a, "viewport"))
         if name:
             grouped[name].append(a)
         else:  # unlabelled legacy anomaly: applies to both viewports
@@ -147,9 +152,9 @@ def metrics_from_anomalies(anomalies: List[Any]) -> Dict[str, Dict[str, Any]]:
     for name, items in grouped.items():
         if not items:
             continue
-        vrs = [_finite(getattr(a, "visibility_ratio", None)) for a in items]
-        ious = [_finite(getattr(a, "iou_score", None)) for a in items]
-        dxs = [_finite(getattr(a, "bleed_px", None)) for a in items]
+        vrs = [_finite(_val(a, "visibility_ratio")) for a in items]
+        ious = [_finite(_val(a, "iou_score")) for a in items]
+        dxs = [_finite(_val(a, "bleed_px")) for a in items]
         out[name] = {"viewport": name,
                      "v_r": min([v for v in vrs if v is not None], default=None),
                      "iou": max([v for v in ious if v is not None], default=0.0),
