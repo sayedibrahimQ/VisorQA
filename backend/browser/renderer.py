@@ -590,14 +590,19 @@ class PlaywrightDualViewportRenderer:
         vp = ViewportRenderResult(name=name, width=width, height=height)
         context = page = None
         try:
+            from backend.core.sense import get_e2b_traffic_headers
+            headers = get_e2b_traffic_headers(url)
             context = await browser.new_context(
                 viewport={"width": width, "height": height},
                 device_scale_factor=1,  # 1 CSS px == 1 screenshot px
+                extra_http_headers=headers if headers else None,
             )
             context.set_default_timeout(self.navigation_timeout_ms)
             context.set_default_navigation_timeout(
                 self.navigation_timeout_ms)
             page = await context.new_page()
+            if headers:
+                await page.set_extra_http_headers(headers)
             await page.goto(url, wait_until="domcontentloaded",
                             timeout=self.navigation_timeout_ms)
             # Readiness without depending exclusively on networkidle.

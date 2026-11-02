@@ -34,6 +34,11 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from backend.config import settings
+from backend.core.sense import (
+    get_e2b_traffic_headers,
+    get_e2b_traffic_token,
+    is_e2b_url,
+)
 from backend.core.state import (
     AgentState,
     Anomaly,
@@ -58,6 +63,9 @@ __all__ = [
     "is_patch_safe",
     "PROTECTED_GLOBS",
     "BANNED_PATCH_PATTERNS",
+    "get_e2b_traffic_headers",
+    "get_e2b_traffic_token",
+    "is_e2b_url",
 ]
 
 logger = logging.getLogger("visorqa.orchestrator")
@@ -260,8 +268,19 @@ async def sense_with_playwright_and_sam(
                 _preview = await sandbox.get_preview_url()
             if not _preview:
                 await sandbox.start_dev_server()
+                if hasattr(sandbox, "get_preview_url"):
+                    _preview = await sandbox.get_preview_url()
+            if _preview:
+                if is_e2b_url(_preview):
+                    logger.info(
+                        f"Node 1 SENSE: E2B cloud preview {_preview} detected; "
+                        "injecting traffic access header to prevent 403 Forbidden"
+                    )
+                else:
+                    logger.info(f"Node 1 SENSE: local preview active at {_preview}")
         except Exception:
             pass
+    await _record_sandbox_state(state, sandbox)
     detected: List[Anomaly] = []
     captured_shots: Dict[str, Dict[str, Any]] = {}
     _evidence_items: List[Dict[str, Any]] = []

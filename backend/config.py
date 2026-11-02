@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     E2B_SANDBOX_TIMEOUT_SECONDS: int = Field(default=180, description="E2B sandbox lifetime bound")
     TARGET_APP_PATH: str = Field(default="./demo-target-app", description="Source target app directory")
     TARGET_APP_PORT: int = Field(default=3001, description="Preferred target app dev-server port")
-    SANDBOX_LOCAL_ROOT: str = Field(default="", description="Local sandbox root (default: /tmp/visorqa_sandboxes)")
+    SANDBOX_LOCAL_ROOT: str = Field(default="/tmp/visorqa_sandboxes", description="Local sandbox root (default: /tmp/visorqa_sandboxes)")
     SANDBOX_HMR_TIMEOUT_SECONDS: float = Field(default=15.0)
     SANDBOX_IDLE_TIMEOUT_SECONDS: float = Field(default=1800.0)
     SANDBOX_CPU_LIMIT: float = Field(default=0.0, description="0 = unset")
