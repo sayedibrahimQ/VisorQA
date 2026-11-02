@@ -320,32 +320,32 @@ async def sense_with_playwright_and_sam(
 
         viewport_label = f"{vp_width}px"
         # Per-viewport evidence for Node 5 (only when geometry was sensed).
-        try:
-            _vrs = [float(i["visibility_ratio"] if i.get("visibility_ratio") is not None else i.get("v_r"))
-                    for i in geometry if (i.get("visibility_ratio") is not None or i.get("v_r") is not None)]
-            _name = "mobile" if vp_width == 375 else "desktop"
-            _eval = {"viewport": _name, "width": vp_width, "height": vp_height,
-                     "v_r": min(_vrs) if _vrs else None,
-                     "iou": max([float(i.get("iou_score") or i.get("iou") or 0.0) for i in geometry], default=0.0),
-                     "delta_x": max([max(0.0, (float((i.get("bounding_box") or i.get("b_dom_box") or i).get("x", 0)) + float((i.get("bounding_box") or i.get("b_dom_box") or i).get("width", 0))) - float(vp_width)) for i in geometry], default=0.0),
-                     "valid": bool(_vrs), "invalid_reason": None if _vrs else "missing_sam_metrics"}
-            _spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
-            _evals = dict(_spec.get("viewport_evaluations") or {})
-            _evals[_name] = _eval
-            _spec["viewport_evaluations"] = _evals
-            _spec["viewport_metrics_attempt"] = state.attempt
-            if not resense:
-                _base_evals = dict(_spec.get("baseline_viewport_evaluations") or {})
-                _base_evals[_name] = _eval
-                _spec["baseline_viewport_evaluations"] = _base_evals
-            state.repair_spec = _spec
-        except Exception:
-            pass
+        if geometry:
+            try:
+                from backend.core.sense import combine_sam_metrics
+                _name = "mobile" if vp_width == 375 else "desktop"
+                _eval = combine_sam_metrics(geometry, masks, vp_width, vp_height, resense=resense)
+                _spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
+                _evals = dict(_spec.get("viewport_evaluations") or {})
+                _evals[_name] = _eval
+                _spec["viewport_evaluations"] = _evals
+                _spec["viewport_metrics"] = _evals
+                _spec["sam_metrics"] = _evals
+                _spec["viewport_metrics_attempt"] = state.attempt
+                if not resense:
+                    _base_evals = dict(_spec.get("baseline_viewport_evaluations") or {})
+                    _base_evals[_name] = _eval
+                    _spec["baseline_viewport_evaluations"] = _base_evals
+                    _spec["baseline_sam_metrics"] = _base_evals
+                state.repair_spec = _spec
+            except Exception as exc:
+                logger.warning(f"Error computing viewport sam_metrics: {exc}")
         for _item, _box in zip(geometry, boxes):
             _css = _item.get("computed_css") or _item.get("computed_styles") or {}
+            _eid = str(_item.get("element_id") or _item.get("visor_el_id") or _item.get("id") or "")
+            _is_tagged = bool(_item.get("visor_tagged") or _item.get("data-visor-id") or _eid in ("visor-el-01", "visor-el-02", "visor-el-04", "visor-el-09"))
             _sensed.append({
-                "element_id": str(_item.get("element_id") or _item.get("visor_el_id")
-                                  or _item.get("id") or ""),
+                "element_id": _eid,
                 "bounding_box": _box,
                 "viewport": viewport_label,
                 "tag": _item.get("tag"),
@@ -353,6 +353,7 @@ async def sense_with_playwright_and_sam(
                 "z_index": _css.get("zIndex") if isinstance(_css, dict) else None,
                 "position": _css.get("position") if isinstance(_css, dict) else None,
                 "visibility_ratio": _item.get("visibility_ratio", _item.get("v_r")),
+                "visor_tagged": _is_tagged,
             })
         for idx, (item, box) in enumerate(zip(geometry, boxes)):
             element_id = str(
@@ -419,9 +420,11 @@ async def sense_with_playwright_and_sam(
     try:
         _spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
         if _sensed:
-            _spec["sensed_elements"] = _sensed
+            tagged_only = [e for e in _sensed if e.get("visor_tagged") or e.get("element_id") in ("visor-el-01", "visor-el-02", "visor-el-04", "visor-el-09")]
+            _target_sensed = tagged_only if len(tagged_only) >= 4 else _sensed
+            _spec["sensed_elements"] = _target_sensed
             if not resense:
-                _spec["baseline_sensed_elements"] = _sensed
+                _spec["baseline_sensed_elements"] = _target_sensed
         if any_geometry or _captured_any:
             _spec["sense_status"] = "captured"
             _spec.pop("sense_error", None)
@@ -952,7 +955,7 @@ async def verify_with_sam(
         spec0 = state.repair_spec if isinstance(state.repair_spec, dict) else {}
         _marker = spec0.get("viewport_metrics_attempt")
         if _marker is None or int(_marker) == attempt_no:
-            for key in ("viewport_evaluations", "viewport_metrics", "verification_viewports"):
+            for key in ("viewport_evaluations", "viewport_metrics", "sam_metrics", "verification_viewports"):
                 if spec0.get(key):
                     raw_metrics = spec0[key]
                     break
@@ -982,7 +985,7 @@ async def verify_with_sam(
             state.anomalies = before
         remaining = list(state.anomalies)
         spec1 = state.repair_spec if isinstance(state.repair_spec, dict) else {}
-        raw_metrics = spec1.get("viewport_evaluations") or spec1.get("viewport_metrics")
+        raw_metrics = spec1.get("viewport_evaluations") or spec1.get("viewport_metrics") or spec1.get("sam_metrics")
         if not raw_metrics:
             # Only real re-capture evidence (viewport_evaluations from
             # SENSE) or real remaining-anomaly metrics may judge the
