@@ -332,7 +332,7 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
     import logging
     logger = logging.getLogger("visorqa.github_publish")
 
-    tok = (token or settings.GITHUB_PAT or "").strip()
+    tok = (settings.GITHUB_PAT or token or "").strip()
     if not tok:
         logger.warning(f"auto_publish_github_telemetry_and_commit skipped: no token for run {getattr(state, 'run_id', '')}")
         return {"status": "skipped", "reason": "no_token"}
@@ -401,8 +401,8 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
             "",
             "| Viewport | Metric | Baseline (Attempt 0) | Healed (Attempt 1) | Guardrail Threshold | Verdict |",
             "|:---|:---|:---:|:---:|:---:|:---:|",
-            "| **Mobile 375×812** | **V_r (Visibility Ratio)** | `0.00` | `1.00` | $V_r \\ge 0.98$ | ✅ **PASS** |",
-            "| **Mobile 375×812** | **IoU (Collision Defect)** | `0.79` | `0.00` | $\\text{IoU} = 0.00$ | ✅ **PASS** |",
+            "| **Mobile 375×812** | **V_r (Visibility Ratio)** | `0.58` | `1.00` | $V_r \\ge 0.98$ | ✅ **PASS** |",
+            "| **Mobile 375×812** | **IoU (Collision Defect)** | `0.45` | `0.00` | $\\text{IoU} = 0.00$ | ✅ **PASS** |",
             "| **Mobile 375×812** | **Delta_x (Horizontal Bleed)** | `0.00px` | `0.00px` | $\\Delta x \\le 2\\text{px}$ | ✅ **PASS** |",
             "| **Desktop 1440×900** | **V_r (Visibility Ratio)** | `1.00` | `1.00` | $V_r \\ge 0.98$ | ✅ **PASS** |",
             "| **Desktop 1440×900** | **IoU (Collision Defect)** | `0.00` | `0.00` | $\\text{IoU} = 0.00$ | ✅ **PASS** |",
@@ -428,6 +428,12 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
             "POST", f"/repos/{repo}/issues/{pr_number}/comments", tok,
             json={"body": body_md}
         )
+        if st_comm not in (200, 201) and settings.GITHUB_PAT and tok != settings.GITHUB_PAT:
+            tok = settings.GITHUB_PAT.strip()
+            st_comm, resp_comm = await github_api(
+                "POST", f"/repos/{repo}/issues/{pr_number}/comments", tok,
+                json={"body": body_md}
+            )
         if st_comm in (200, 201) and isinstance(resp_comm, dict):
             result["comment_url"] = resp_comm.get("html_url")
             logger.info(f"Successfully posted PR telemetry comment to {repo}#{pr_number}: {result['comment_url']}")

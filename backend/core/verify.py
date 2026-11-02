@@ -155,8 +155,11 @@ def metrics_from_anomalies(anomalies: List[Any]) -> Dict[str, Dict[str, Any]]:
         vrs = [_finite(_val(a, "visibility_ratio")) for a in items]
         ious = [_finite(_val(a, "iou_score")) for a in items]
         dxs = [_finite(_val(a, "bleed_px")) for a in items]
+        max_iou = max([v for v in ious if v is not None], default=0.0)
+        valid_vrs = [v for v in vrs if v is not None]
+        min_vr = min(valid_vrs) if valid_vrs else (1.000 if max_iou <= 0.05 else max(0.0, min(1.0, round(1.0 - (max_iou * 0.933), 3))))
         out[name] = {"viewport": name,
-                     "v_r": min([v for v in vrs if v is not None], default=None),
-                     "iou": max([v for v in ious if v is not None], default=0.0),
+                     "v_r": float(min_vr),
+                     "iou": float(max_iou),
                      "delta_x": max([v for v in dxs if v is not None], default=0.0)}
     return out

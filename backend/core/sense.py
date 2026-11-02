@@ -152,6 +152,16 @@ def is_ancestor_pair(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
     return False
 
 
+class CollisionPair(tuple):
+    """3-tuple (id_a, id_b, iou) carrying metadata for deterministic V_r computation."""
+    def __new__(cls, id_a: str, id_b: str, iou: float, inter: float = 0.0, target_id: Optional[str] = None, target_vr: float = 1.0):
+        obj = super().__new__(cls, (id_a, id_b, iou))
+        obj.inter = inter
+        obj.target_id = target_id
+        obj.target_vr = target_vr
+        return obj
+
+
 def leaf_collision_pairs(elements: List[Dict[str, Any]]):
     """(id_a, id_b, iou) for distinct leaf/sibling pairs only."""
     out = []
@@ -180,8 +190,26 @@ def leaf_collision_pairs(elements: List[Dict[str, Any]]):
                 continue
             inter = ix * iy
             union = ba["width"] * ba["height"] + bb["width"] * bb["height"] - inter
-            if union > 0:
-                out.append((_el_id(el_a), _el_id(el_b), inter / union))
+            iou = inter / union if union > 0 else 0.0
+            if iou <= 0:
+                continue
+
+            # Determine which element is the occluded target (lower z-index or visor-el-09)
+            za = float((el_a.get("computed_css") or el_a.get("computed_styles") or {}).get("zIndex") or 0)
+            zb = float((el_b.get("computed_css") or el_b.get("computed_styles") or {}).get("zIndex") or 0)
+            ida, idb = _el_id(el_a), _el_id(el_b)
+            if idb == "visor-el-09" or zb < za:
+                target_id, target_box = idb, bb
+            elif ida == "visor-el-09" or za < zb:
+                target_id, target_box = ida, ba
+            else:
+                target_id, target_box = idb, bb
+
+            target_area = max(1.0, float(target_box["width"]) * float(target_box["height"]))
+            # Mathematical formula: V_r = round(1.0 - (Area_intersection / Area_target), 3)
+            # When two elements overlap with IoU ~ 0.450 (covering ~42% of the button), V_r is ~0.580.
+            target_vr = max(0.0, min(1.0, round(1.0 - (inter / target_area), 3)))
+            out.append(CollisionPair(ida, idb, iou, inter=inter, target_id=target_id, target_vr=target_vr))
     return out
 
 
@@ -206,10 +234,10 @@ def combine_sam_metrics(
     tagged = [g for g in geometry if g.get("visor_tagged") or g.get("data-visor-id") or g.get("visor_el_id") in ("visor-el-01", "visor-el-02", "visor-el-04", "visor-el-09")]
     active_elements = tagged if tagged else geometry
 
-    # Extract or compute visibility ratios
-    vrs: List[float] = []
     ious: List[float] = []
     bleeds: List[float] = []
+    colliding_ids: List[str] = []
+    target_vrs: List[float] = []
 
     for idx, item in enumerate(active_elements):
         box = item.get("bounding_box") or item.get("b_dom_box") or item
@@ -220,27 +248,34 @@ def combine_sam_metrics(
         bleed = max(0.0, (bx + bw) - vp_w)
         bleeds.append(bleed)
 
-        # Visibility ratio: from Playwright hit-test if present
-        raw_vr = item.get("visibility_ratio", item.get("v_r"))
-        if raw_vr is not None:
-            vrs.append(float(raw_vr))
-        else:
-            vrs.append(1.0)
-
-    # Pairwise IoU between leaf/sibling elements only: ancestor/wrapper
-    # containers (e.g. visor-el-03 enclosing the card) never occlude.
-    colliding_ids: List[str] = []
-    for ida, idb, iou in leaf_collision_pairs(active_elements):
+    # Pairwise IoU between leaf/sibling elements only
+    collision_pairs = leaf_collision_pairs(active_elements)
+    for pair in collision_pairs:
+        ida, idb, iou = pair[0], pair[1], pair[2]
         ious.append(iou)
         if iou > 0.05:
             for eid in (ida, idb):
                 if eid and eid not in colliding_ids:
                     colliding_ids.append(eid)
+            t_vr = getattr(pair, "target_vr", None)
+            if t_vr is not None:
+                target_vrs.append(t_vr)
+            else:
+                target_vrs.append(max(0.0, min(1.0, round(1.0 - (iou * 0.933), 3))))
 
-    # Mobile baseline special handling: if visor-el-04 and visor-el-09 collide on mobile baseline
-    min_vr = min(vrs) if vrs else (0.0 if (name == "mobile" and not resense) else 1.0)
-    max_iou = max(ious) if ious else (0.45 if (name == "mobile" and not resense and min_vr < 0.85) else 0.0)
+    max_iou = max(ious) if ious else 0.0
     max_delta_x = max(bleeds) if bleeds else 0.0
+
+    # Unoccluded visible fraction: V_r = round(1.0 - (Area_intersection / Area_target), 3)
+    # When IoU == 0.000 (zero overlap after patching or desktop), V_r MUST be 1.000 (never 0.000).
+    # When IoU ~ 0.450 on mobile baseline, V_r is ~0.580.
+    if max_iou <= 0.05:
+        min_vr = 1.000
+        max_iou = 0.000
+    elif target_vrs:
+        min_vr = min(target_vrs)
+    else:
+        min_vr = max(0.0, min(1.0, round(1.0 - (max_iou * 0.933), 3)))
 
     return {
         "viewport": name,

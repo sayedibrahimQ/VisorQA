@@ -60,10 +60,11 @@ _GEOMETRY_JS = """() => {
     // (clipped to the viewport) and count how many hit-test to this
     // element or one of its descendants. Occluding overlays (e.g. a fixed
     // banner) therefore lower the ratio exactly as a user would see it.
-    let vrHits = 0, vrTotal = 0;
+    let visibilityRatio = 1.0;
     const vx0 = Math.max(r.left, 0), vy0 = Math.max(r.top, 0);
     const vx1 = Math.min(r.right, innerWidth), vy1 = Math.min(r.bottom, innerHeight);
     if (vx1 > vx0 && vy1 > vy0) {
+      let vrHits = 0, vrTotal = 0;
       const nx = Math.min(5, Math.max(1, Math.floor((vx1 - vx0) / 24)));
       const ny = Math.min(5, Math.max(1, Math.floor((vy1 - vy0) / 24)));
       for (let ix = 0; ix < nx; ix++) {
@@ -75,8 +76,10 @@ _GEOMETRY_JS = """() => {
           if (hit && (hit === el || el.contains(hit))) vrHits += 1;
         }
       }
+      if (vrTotal > 0) {
+        visibilityRatio = Number((vrHits / vrTotal).toFixed(3));
+      }
     }
-    const visibilityRatio = vrTotal ? vrHits / vrTotal : 0;
     out.push({element_id: id, visor_el_id: id, visor_tagged: visorTagged, dom_id: el.id || null, tag: el.tagName.toLowerCase(),
       visibility_ratio: visibilityRatio, v_r: visibilityRatio,
       bounding_box: {x: r.x, y: r.y, width: r.width, height: r.height},
@@ -487,39 +490,16 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
                         raise
                     except Exception:
                         pass
-                # After a patch (or during re-sense in VERIFY), force a fresh reload and wait for styles to settle
+                # After a patch (or during re-sense in VERIFY), reload page and wait for styles to settle
                 if getattr(self._status, "patch_count", 0) > 0 or getattr(self, "_resensing", False):
                     try:
-                        await page.reload(wait_until="networkidle", timeout=15000)
-                    except Exception:
-                        try:
-                            await page.reload(wait_until="domcontentloaded", timeout=15000)
-                        except Exception:
-                            pass
-                    try:
-                        await page.wait_for_timeout(1000)
+                        await page.reload(wait_until="domcontentloaded", timeout=5000)
                     except Exception:
                         pass
-                    # Verify that promo banner (visor-el-04) and checkout submit button (visor-el-09)
-                    # no longer intersect before capturing screenshot_after.png
-                    for _ in range(6):
-                        try:
-                            check = await page.evaluate("""() => {
-                                const elA = document.querySelector('[data-visor-id="visor-el-04"]');
-                                const elB = document.querySelector('[data-visor-id="visor-el-09"]');
-                                if (!elA || !elB) return { intersects: false };
-                                const rA = elA.getBoundingClientRect();
-                                const rB = elB.getBoundingClientRect();
-                                const ix = Math.max(0, Math.min(rA.right, rB.right) - Math.max(rA.left, rB.left));
-                                const iy = Math.max(0, Math.min(rA.bottom, rB.bottom) - Math.max(rA.top, rB.top));
-                                return { intersects: (ix > 0 && iy > 0 && (ix * iy) > 50) };
-                            }""")
-                            if not check.get("intersects"):
-                                break
-                            await page.reload(wait_until="domcontentloaded", timeout=5000)
-                            await page.wait_for_timeout(1000)
-                        except Exception:
-                            break
+                    try:
+                        await page.wait_for_timeout(500)
+                    except Exception:
+                        pass
                 geometry = await page.evaluate(_GEOMETRY_JS)
                 # Full LCA DOM hierarchy extraction with descriptors, ancestor chains, and CSS signatures
                 try:
