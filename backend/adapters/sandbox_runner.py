@@ -135,6 +135,12 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
                  target_app_port: Optional[int] = None, **kwargs: Any):
         super().__init__(**kwargs)
         self._source_dir = source_dir
+        if target_app_port is None:
+            try:
+                from backend.config import settings as _s
+                target_app_port = int(getattr(_s, "TARGET_APP_PORT", 3001) or 3001)
+            except Exception:
+                target_app_port = 3001
         self._target_app_port = target_app_port
         self._used_worktree = False
         self._worktree_source: Optional[Path] = None
@@ -185,6 +191,30 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
             return self.working_dir
         rid = run_id or (getattr(state, "run_id", "") if state is not None else "") or "visor-run"
         source = self._source_dir
+
+        if state is not None:
+            spec = getattr(state, "repair_spec", {}) or {}
+            repo_root = spec.get("repo_root") or spec.get("repository_root")
+            if repo_root and Path(repo_root).is_dir():
+                source = str(repo_root)
+            elif (getattr(state, "repo_full_name", None) or getattr(state, "pr_url", None)) and (
+                not source or source == "./demo-target-app"
+            ):
+                try:
+                    from backend.core.worktree import hydrate_pr_workspace
+                    tok = getattr(state, "github_token", "") or os.getenv("GITHUB_TOKEN", "") or os.getenv("GITHUB_PAT", "")
+                    ws = await hydrate_pr_workspace(
+                        str(rid),
+                        getattr(state, "repo_full_name", "") or "",
+                        getattr(state, "branch", "") or "main",
+                        int(getattr(state, "pr_number", 0) or 0),
+                        tok,
+                    )
+                    if ws.get("root") and Path(ws["root"]).is_dir():
+                        source = ws["root"]
+                except Exception as exc:
+                    logger.warning(f"ensure_workspace hydration failed for {rid}: {exc}")
+
         if source is None:
             try:
                 from backend.config import settings as _s
@@ -269,8 +299,15 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
     # -- dev server ---------------------------------------------------------
     def _default_dev_command(self, port: int) -> List[str]:
         workdir = self.working_dir
-        if workdir and (workdir / "index.html").is_file() and not (workdir / "node_modules" / "next").exists():
+        if workdir and (workdir / "index.html").is_file() and not (workdir / "package.json").is_file():
             return [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1", "--directory", str(workdir)]
+        if workdir and (workdir / "package.json").is_file():
+            try:
+                scripts = json.loads((workdir / "package.json").read_text(encoding="utf-8")).get("scripts", {})
+            except Exception:
+                scripts = {}
+            if "dev" in scripts:
+                return ["npm", "run", "dev", "--", "-p", str(port), "-H", "127.0.0.1"]
         return super()._default_dev_command(port)
 
     # -- real dependency install with per-lockfile cache ----------------

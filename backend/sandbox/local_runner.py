@@ -81,8 +81,12 @@ class LocalSandboxRunner(SandboxRunner):
         cpu_limit: Optional[float] = None, memory_limit_mb: Optional[int] = None,
         cleanup_on_terminate: bool = True,
     ):
-        self.base_dir = Path(base_dir or os.environ.get(
-            "SANDBOX_LOCAL_ROOT", "/tmp/visorqa-sandboxes")).expanduser()
+        self.base_dir = Path(
+            base_dir
+            or os.environ.get("SANDBOX_LOCAL_ROOT")
+            or os.environ.get("VISORQA_SANDBOX_ROOT")
+            or "/tmp/visorqa_sandboxes"
+        ).expanduser()
         self.hmr_timeout = float(hmr_timeout)
         self.idle_timeout = float(idle_timeout)
         self.startup_timeout = float(startup_timeout)

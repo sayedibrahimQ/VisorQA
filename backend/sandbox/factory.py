@@ -16,12 +16,11 @@ def _resolve_name(cfg: Any, backend: Optional[str]) -> str:
     if backend:
         return str(backend).strip().lower()
     provider = str(getattr(cfg, "SANDBOX_PROVIDER", "") or "").strip().lower()
-    legacy = str(getattr(cfg, "SANDBOX_BACKEND", "") or "").strip().lower()
-    # An explicit non-default value in either spelling wins.
-    if legacy and legacy != "local":
-        return legacy
     if provider:
         return provider
+    legacy = str(getattr(cfg, "SANDBOX_BACKEND", "") or "").strip().lower()
+    if legacy and legacy != "local":
+        return legacy
     # Auto: E2B cloud when a key is configured, else local.
     if str(getattr(cfg, "E2B_API_KEY", "") or "").strip():
         return "e2b"
@@ -37,7 +36,7 @@ def create_sandbox_runner(settings_obj: Any = None, backend: Optional[str] = Non
         return LocalWorktreeSandboxRunner(
             source_dir=str(getattr(cfg, "TARGET_APP_PATH", "./demo-target-app") or "./demo-target-app"),
             target_app_port=int(getattr(cfg, "TARGET_APP_PORT", 3001) or 3001),
-            base_dir=getattr(cfg, "SANDBOX_LOCAL_ROOT", "") or None,
+            base_dir=getattr(cfg, "SANDBOX_LOCAL_ROOT", "") or "/tmp/visorqa_sandboxes",
             hmr_timeout=float(getattr(cfg, "SANDBOX_HMR_TIMEOUT_SECONDS", 15.0)),
             idle_timeout=float(getattr(cfg, "SANDBOX_IDLE_TIMEOUT_SECONDS", 1800.0)),
             cpu_limit=getattr(cfg, "SANDBOX_CPU_LIMIT", None) or None,
