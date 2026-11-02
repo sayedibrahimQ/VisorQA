@@ -329,6 +329,7 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
                 results.append({
                     "id": r.id,
                     "pr_number": r.pr_number,
+                    "pr_title": getattr(r, "pr_title", None) or "",
                     "repo_name": r.repo_full_name,
                     "branch": r.branch,
                     "commit_sha": r.commit_sha,
@@ -358,6 +359,7 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
             results.append({
                 "id": rec.get("id"),
                 "pr_number": rec.get("pr_number", 0),
+                "pr_title": rec.get("pr_title") or "",
                 "repo_name": rec.get("repo_name", ""),
                 "branch": rec.get("branch", ""),
                 "commit_sha": rec.get("commit_sha", ""),
@@ -554,6 +556,7 @@ async def create_run(payload: CreateRunRequest,
                 repo_name=record["repo_name"],
                 branch=payload.branch,
                 commit_sha=payload.commit_sha or "HEAD",
+                pr_title=pr_title,
             )
             run_id = created.id
             record["id"] = run_id
@@ -640,6 +643,7 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
                 run_dict: Dict[str, Any] = {
                     "id": run.id,
                     "pr_number": run.pr_number,
+                    "pr_title": getattr(run, "pr_title", None) or "",
                     "repo_name": run.repo_full_name,
                     "repo_full_name": run.repo_full_name,
                     "branch": run.branch,
@@ -718,6 +722,41 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
     # Honest miss: no DB row and no registry record means the run does
     # not exist. Never invent a demo run.
     return JSONResponse({"detail": f"run {run_id} not found"}, status_code=404)
+
+
+@router.post("/runs/{run_id}/publish")
+async def publish_run(run_id: str, request: Request) -> Dict[str, Any]:
+    """Operator control: commit and push the verified fix to GitHub PR."""
+    from backend.core.artifacts import ArtifactStore
+    from backend.core.github_publish import publish_run_result
+    from backend.core.state import AgentState
+
+    record = ArtifactStore().get_run_record(run_id)
+    if not record:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    state = AgentState(
+        run_id=run_id,
+        repo_full_name=record.get("repo_full_name") or record.get("repo_name", ""),
+        repo_name=record.get("repo_name", ""),
+        pr_number=int(record.get("pr_number") or 0),
+        branch=record.get("branch", "main"),
+        commit_sha=record.get("commit_sha", ""),
+        is_resolved=record.get("status") == "RESOLVED" or record.get("is_resolved", False),
+        best_patch=record.get("best_patch") or "",
+        best_attempt_number=1,
+    )
+    published_state = await publish_run_result(state)
+    status = (published_state.repair_spec or {}).get("github_publication_status") or "published"
+    commit_sha = published_state.github_commit_sha or record.get("commit_sha") or "HEAD"
+    return {
+        "status": status,
+        "run_id": run_id,
+        "commit_sha": commit_sha,
+        "pushed": bool(published_state.github_commit_pushed),
+        "detail": (published_state.repair_spec or {}).get("github_error") or "Fix published successfully",
+    }
 
 
 # -----------------------------------------------------------------------------
