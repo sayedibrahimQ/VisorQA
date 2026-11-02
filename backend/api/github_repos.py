@@ -389,7 +389,7 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
     try:
         strike = getattr(state, "strike_count", 1) or 1
         commit_link = f"[`{result['commit_sha'][:7]}`]({result['commit_url']})" if result["commit_sha"] else "applied in sandbox"
-        
+
         body_lines = [
             f"## 🛡️ VisorQA Optical Telemetry Report — Run `{run_id}`",
             "",

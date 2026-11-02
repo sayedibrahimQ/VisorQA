@@ -695,13 +695,11 @@ async def diagnose_muse_wonder(
     }
     computed_styles: Dict[str, Any] = dict(
         state.repair_spec.get("computed_styles", {}))
-    diagnose_failed = False
     try:
         result: Dict[str, Any] = await wonder.diagnose_defect(
             b"", computed_styles, triage_info
         ) or {}
     except Exception as exc:  # deterministic fallback spec
-        diagnose_failed = True
         result = {"diagnosis": f"diagnosis unavailable: {exc}",
                   "recommended_fix": ""}
 
@@ -1531,5 +1529,4 @@ async def run_visor_agent(
     if ws_broadcast is None:
         return await orch.execute_run(state)
     return await _drive_fsm(state, orchestrator=orch, event_broadcast=ws_broadcast)
-
 

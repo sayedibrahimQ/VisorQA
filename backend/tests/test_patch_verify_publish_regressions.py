@@ -1,6 +1,5 @@
 """Regressions: wrapper collisions, PATCH->VERIFY healing, auto-publish."""
 import io
-from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -45,7 +44,8 @@ def test_contained_leaf_inside_wrapper_is_not_collision():
 
 def test_mask_highlights_only_colliding_leaves():
     shot = Image.new("RGB", (375, 812), (255, 255, 255))
-    buf = io.BytesIO(); shot.save(buf, format="PNG")
+    buf = io.BytesIO()
+    shot.save(buf, format="PNG")
     elements = [_geo("visor-el-03", 0, 0, 375, 812), _geo("visor-el-04", 0, 700, 375, 80),
                 _geo("visor-el-09", 20, 720, 335, 56)]
     anomalies = [{"element_id": "visor-el-03", "secondary_el_id": "visor-el-09"},
@@ -57,7 +57,9 @@ def test_mask_highlights_only_colliding_leaves():
 
 
 def _state(tmp_path):
-    p = tmp_path / TARGET; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(ORIGINAL)
+    p = tmp_path / TARGET
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(ORIGINAL)
     return AgentState(run_id="run-x", repo_full_name="sayedibrahimQ/aether-hardware", pr_number=2,
         branch="feat/mobile", attempt=1, target_files=[TARGET],
         anomalies=[Anomaly(element_id="visor-el-09", defect_type=DefectType.COLLISION,
@@ -97,21 +99,33 @@ async def test_publish_commits_exact_message_and_saves_urls(tmp_path):
     (tmp_path / TARGET).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / TARGET).write_text(ORIGINAL.replace("fixed bottom-0 z-50", "relative z-10 mb-3"))
     s = _state(tmp_path)
-    s.is_resolved = True; s.current_patch = DIFF; s.best_patch = DIFF; s.best_attempt_number = 1
-    s.modified_files = [TARGET]; s.commit_sha = "base123"
+    s.is_resolved = True
+    s.current_patch = DIFF
+    s.best_patch = DIFF
+    s.best_attempt_number = 1
+    s.modified_files = [TARGET]
+    s.commit_sha = "base123"
     s.best_viewport_metrics = {"mobile": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0},
                                "desktop": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0}}
     s.repair_spec.update({"repo_root": str(tmp_path),
         "baseline_viewport_evaluations": {"mobile": {"v_r": 0.4, "iou": 0.62, "delta_x": 0.0},
                                           "desktop": {"v_r": 1.0, "iou": 0.0, "delta_x": 0.0}}})
 
-    class Comment: html_url = "https://github.com/sayedibrahimQ/aether-hardware/issues/2#issuecomment-9"
+    class Comment:
+        html_url = "https://github.com/sayedibrahimQ/aether-hardware/issues/2#issuecomment-9"
+
     class GH:
-        async def get_branch_head(self, r, b): return "base123"
+        async def get_branch_head(self, r, b):
+            return "base123"
+
         async def commit_files(self, repo, branch, *, expected_head, files, message, idempotency_key=""):
-            self.message = message; self.files = files; return "newsha456"
+            self.message = message
+            self.files = files
+            return "newsha456"
+
         async def post_verification_comment(self, repo, pr, body, *, marker=""):
-            self.body = body; return Comment()
+            self.body = body
+            return Comment()
 
     gh = GH()
     out = await publish_run_result(s, gh)
