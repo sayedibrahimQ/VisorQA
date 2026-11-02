@@ -27,6 +27,7 @@ callback style) for the existing dashboard / test integration.
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import inspect
 import logging
@@ -1261,8 +1262,23 @@ async def _drive_fsm(
         if use_events:
             await _broadcast(event_broadcast, "SENSE_STARTED", state)
 
-        # Node 1: SENSE
-        state = await orchestrator.step_1_sense(state)
+        # Node 1: SENSE (strict 35s timeout to prevent hanging)
+        try:
+            state = await asyncio.wait_for(orchestrator.step_1_sense(state), timeout=35.0)
+        except asyncio.TimeoutError:
+            logger.error("Node 1 SENSE timed out after 35s")
+            state.is_resolved = False
+            state.transition_to(FSMStep.VERIFY, RunStatus.FAILED)
+            spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
+            spec["sense_status"] = "capture_failed"
+            spec["sense_error"] = "SENSE stage timed out after 35s (target app boot/capture)"
+            state.repair_spec = spec
+            if use_events:
+                await _broadcast(event_broadcast, "RUN_HALTED", state)
+            else:
+                await orchestrator.emit_update(state)
+            return state
+
         if use_events:
             await _broadcast(event_broadcast, "SENSE_COMPLETE", state)
 
@@ -1288,8 +1304,11 @@ async def _drive_fsm(
                 await orchestrator.emit_update(state)
             return state
 
-        # Node 2: TRIAGE (once per run, FR-04)
-        state = await orchestrator.step_2_triage(state)
+        # Node 2: TRIAGE (once per run, FR-04, 25s timeout)
+        try:
+            state = await asyncio.wait_for(orchestrator.step_2_triage(state), timeout=25.0)
+        except asyncio.TimeoutError:
+            logger.warning("Node 2 TRIAGE timed out after 25s; using fallback target files")
         if use_events:
             await _broadcast(event_broadcast, "TRIAGE_COMPLETE", state)
 
@@ -1298,15 +1317,15 @@ async def _drive_fsm(
             state.attempt += 1
             state.strike_count = state.attempt
             try:
-                state = await orchestrator.step_3_diagnose(state)
-                state = await orchestrator.step_4_patch(state)
+                state = await asyncio.wait_for(orchestrator.step_3_diagnose(state), timeout=30.0)
+                state = await asyncio.wait_for(orchestrator.step_4_patch(state), timeout=30.0)
                 # A PATCH implementation may have recorded the attempt
                 # (legacy mock point); adopt its diff as current_patch.
                 if not state.current_patch and state.attempts:
                     latest = state.attempts[-1]
                     if latest.attempt_number == state.attempt and latest.patch_diff:
                         state.current_patch = latest.patch_diff
-                state = await orchestrator.step_5_verify(state)
+                state = await asyncio.wait_for(orchestrator.step_5_verify(state), timeout=35.0)
             except Exception as exc:
                 # Record the failed strike and continue; never loop forever.
                 if not any(a.attempt_number == state.attempt for a in state.attempts):
@@ -1334,6 +1353,14 @@ async def _drive_fsm(
                 if use_events:
                     await _broadcast(event_broadcast, "RUN_RESOLVED", state)
                 break
+
+        if not state.is_resolved and state.status not in (RunStatus.RESOLVED, RunStatus.FAILED):
+            state.status = RunStatus.FAILED
+            state.transition_to(FSMStep.VERIFY, RunStatus.FAILED)
+            if use_events:
+                await _broadcast(event_broadcast, "RUN_HALTED", state)
+            else:
+                await orchestrator.emit_update(state)
     finally:
         orchestrator.on_state_change = saved_callback
         orchestrator.ws_broadcast = saved_ws

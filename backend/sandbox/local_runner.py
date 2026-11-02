@@ -56,20 +56,22 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _http_ok(port: int, timeout: float = 2.0) -> bool:
+def _http_ok(port: int, timeout: float = 1.0) -> bool:
+    conn = None
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
         conn.request("GET", "/")
         resp = conn.getresponse()
         resp.read()
         return resp.status < 500
-    except OSError:
+    except Exception:
         return False
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 class LocalSandboxRunner(SandboxRunner):
@@ -198,13 +200,17 @@ class LocalSandboxRunner(SandboxRunner):
         self._port = port
         cmd = self._dev_command or self._default_dev_command(port)
         self._status.server_state = ServerState.STARTING
-        self._log_path = self._log_path or (workdir.parent / "dev-server.log")
-        log = open(self._log_path, "ab", buffering=0)  # noqa: SIM115 - owned by child
+        if _http_ok(port):
+            self._status.server_state = ServerState.RUNNING
+            self._status.preview_url = f"http://127.0.0.1:{port}"
+            self._touch()
+            return await self.get_status()
+
         env = dict(os.environ, PORT=str(port), HOSTNAME="127.0.0.1", NODE_ENV="development")
         env.pop("MODAL_TOKEN", None)
         preexec = None
         if self.memory_limit_mb or self.cpu_limit:
-            def preexec():  # pragma: no cover - exercised with limits configured
+            def preexec():  # pragma: no cover
                 import resource
                 if self.memory_limit_mb:
                     n = int(self.memory_limit_mb) * 1024 * 1024
@@ -212,13 +218,17 @@ class LocalSandboxRunner(SandboxRunner):
                 if self.cpu_limit:
                     secs = max(1, int(self.cpu_limit * 60))
                     resource.setrlimit(resource.RLIMIT_CPU, (secs, secs))
+
+        self._log_path = self._log_path or (workdir.parent / "dev-server.log")
+        log = open(self._log_path, "ab", buffering=0)  # noqa: SIM115 - owned by child
+
         self._proc = subprocess.Popen(
             cmd, cwd=str(workdir), stdout=log, stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL, env=env, start_new_session=True,
             preexec_fn=preexec)
         self._status.server_pid = self._proc.pid
         self._status.preview_url = f"http://127.0.0.1:{port}"
-        deadline = time.monotonic() + self.startup_timeout
+        deadline = time.monotonic() + min(self.startup_timeout, 25.0)
         while time.monotonic() < deadline:
             if self._proc.poll() is not None:
                 self._status.server_state = ServerState.CRASHED

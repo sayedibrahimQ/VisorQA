@@ -141,9 +141,21 @@ async def _run_agent_lifecycle_hydrated(state: AgentState, token: str = "") -> N
         logger.error(f"Sandbox runner binding failed for run {state.run_id}: {runner_err}")
     try:
         try:
-            await _run_agent_lifecycle(state, sandbox_runner=runner)
+            await asyncio.wait_for(_run_agent_lifecycle(state, sandbox_runner=runner), timeout=120.0)
         except TypeError:
-            await _run_agent_lifecycle(state)
+            await asyncio.wait_for(_run_agent_lifecycle(state), timeout=120.0)
+    except asyncio.TimeoutError:
+        logger.error(f"Run {state.run_id} timed out after 120s total execution budget")
+        state.status = RunStatus.FAILED
+        state.is_resolved = False
+        try:
+            from backend.api.routes_ws import ws_broadcast
+            await ws_broadcast("RUN_HALTED", state)
+            async with AsyncSessionLocal() as session:
+                repo = RunRepository(session)
+                await repo.sync_agent_state(state)
+        except Exception:
+            pass
     finally:
         if runner is not None:
             try:
