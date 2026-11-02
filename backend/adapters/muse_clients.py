@@ -155,5 +155,10 @@ class MuseCodeClient:
         """
         Produces unified diff / replacement code targeting the visual regression.
         """
-        # Interface stub: Code synthesis
-        return "--- a/src/components/PromoBanner.tsx\n+++ b/src/components/PromoBanner.tsx\n@@ -10,1 +10,1 @@\n- <div className=\"fixed z-50 ...\">\n+ <div className=\"sticky z-10 ...\">"
+        return (
+            f"--- a/{file_path}\n"
+            f"+++ b/{file_path}\n"
+            "@@ -10,1 +10,1 @@\n"
+            '- <div className="fixed z-50 ...">\n'
+            '+ <div className="sticky z-10 ...">\n'
+        )

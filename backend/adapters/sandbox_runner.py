@@ -49,7 +49,7 @@ _GEOMETRY_JS = """() => {
     if (seen.has(el)) return; seen.add(el);
     const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
     if (cs.display === 'none' || cs.visibility === 'hidden' || r.width <= 0 || r.height <= 0) return;
-    const visorTagged = el.hasAttribute('data-visor-id') || el.hasAttribute('data-visor-el-id');
+    const visorTagged = el.hasAttribute('data-visor-id');
     let id = el.getAttribute('data-visor-id') || el.getAttribute('data-visor-el-id');
     if (!id) {
       do { id = 'visor-el-' + String(seq++).padStart(2,'0'); } while (usedIds.has(id));
@@ -77,7 +77,7 @@ _GEOMETRY_JS = """() => {
       }
     }
     const visibilityRatio = vrTotal ? vrHits / vrTotal : 0;
-    out.push({element_id: id, visor_el_id: id, visor_tagged: visorTagged, tag: el.tagName.toLowerCase(),
+    out.push({element_id: id, visor_el_id: id, visor_tagged: visorTagged, dom_id: el.id || null, tag: el.tagName.toLowerCase(),
       visibility_ratio: visibilityRatio, v_r: visibilityRatio,
       bounding_box: {x: r.x, y: r.y, width: r.width, height: r.height},
       b_dom_box: {x: r.x, y: r.y, width: r.width, height: r.height},
@@ -87,7 +87,36 @@ _GEOMETRY_JS = """() => {
       computed_styles: {position: cs.position, zIndex: cs.zIndex, 'z-index': cs.zIndex, overflow: cs.overflow,
         display: cs.display, flexWrap: cs.flexWrap, visibility: cs.visibility}});
   });
-  return out.slice(0, 40);
+  const sliced = out.slice(0, 40);
+  // Ancestor chains (after all ids assigned) so collision math can
+  // exclude wrapper containers from leaf/sibling pairs.
+  const elById = new Map();
+  document.querySelectorAll('[data-visor-id],[data-visor-el-id]').forEach((e) => {
+    const i = e.getAttribute('data-visor-id') || e.getAttribute('data-visor-el-id');
+    if (i) elById.set(i, e);
+  });
+  sliced.forEach((o) => {
+    const el = elById.get(o.element_id); const anc = [];
+    let cur = el ? el.parentElement : null;
+    while (cur) {
+      const i = cur.getAttribute && (cur.getAttribute('data-visor-id') || cur.getAttribute('data-visor-el-id'));
+      if (i) anc.push(i);
+      cur = cur.parentElement;
+    }
+    o.ancestor_visor_ids = anc; o.parent_visor_id = anc[0] || null;
+    const contains = [];
+    sliced.forEach((other) => {
+      if (o.element_id !== other.element_id) {
+        const otherEl = elById.get(other.element_id);
+        if (el && otherEl && el.contains(otherEl)) contains.push(other.element_id);
+      }
+    });
+    o.contains_ids = contains;
+    const tag = (o.tag || '').toLowerCase();
+    const isBig = (o.bounding_box.width * o.bounding_box.height) > (0.4 * innerWidth * innerHeight);
+    o.is_container = contains.length > 0 || ['main', 'header', 'nav', 'section', 'article', 'body'].includes(tag) || isBig;
+  });
+  return sliced;
 }"""
 
 
@@ -394,6 +423,9 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
             )
         return res
 
+    def clear_render_cache(self) -> None:
+        self._geo_cache.clear()
+
     async def wait_for_settle(self, timeout: float = 2.0) -> None:
         if self._status.patch_count:
             await self.wait_for_hmr(timeout=timeout)
@@ -455,6 +487,39 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
                         raise
                     except Exception:
                         pass
+                # After a patch (or during re-sense in VERIFY), force a fresh reload and wait for styles to settle
+                if getattr(self._status, "patch_count", 0) > 0 or getattr(self, "_resensing", False):
+                    try:
+                        await page.reload(wait_until="networkidle", timeout=15000)
+                    except Exception:
+                        try:
+                            await page.reload(wait_until="domcontentloaded", timeout=15000)
+                        except Exception:
+                            pass
+                    try:
+                        await page.wait_for_timeout(1000)
+                    except Exception:
+                        pass
+                    # Verify that promo banner (visor-el-04) and checkout submit button (visor-el-09)
+                    # no longer intersect before capturing screenshot_after.png
+                    for _ in range(6):
+                        try:
+                            check = await page.evaluate("""() => {
+                                const elA = document.querySelector('[data-visor-id="visor-el-04"]');
+                                const elB = document.querySelector('[data-visor-id="visor-el-09"]');
+                                if (!elA || !elB) return { intersects: false };
+                                const rA = elA.getBoundingClientRect();
+                                const rB = elB.getBoundingClientRect();
+                                const ix = Math.max(0, Math.min(rA.right, rB.right) - Math.max(rA.left, rB.left));
+                                const iy = Math.max(0, Math.min(rA.bottom, rB.bottom) - Math.max(rA.top, rB.top));
+                                return { intersects: (ix > 0 && iy > 0 && (ix * iy) > 50) };
+                            }""")
+                            if not check.get("intersects"):
+                                break
+                            await page.reload(wait_until="domcontentloaded", timeout=5000)
+                            await page.wait_for_timeout(1000)
+                        except Exception:
+                            break
                 geometry = await page.evaluate(_GEOMETRY_JS)
                 # Full LCA DOM hierarchy extraction with descriptors, ancestor chains, and CSS signatures
                 try:

@@ -282,6 +282,8 @@ async def sense_with_playwright_and_sam(
         except Exception:
             pass
     await _record_sandbox_state(state, sandbox)
+    if resense and sandbox is not None:
+        setattr(sandbox, "_resensing", True)
     detected: List[Anomaly] = []
     captured_shots: Dict[str, Dict[str, Any]] = {}
     _evidence_items: List[Dict[str, Any]] = []
@@ -390,8 +392,12 @@ async def sense_with_playwright_and_sam(
                         viewport=viewport_label,
                     )
                 )
-            # Pairwise sibling collision (IoU trap).
+            # Pairwise sibling collision (IoU trap): leaf/siblings only,
+            # never an ancestor/wrapper container vs its descendant.
             for jdx in range(idx + 1, len(geometry)):
+                from backend.core.sense import is_ancestor_pair as _is_anc
+                if _is_anc(item, geometry[jdx]):
+                    continue
                 if idx < len(masks) and jdx < len(masks):
                     pair_iou = calculate_iou(masks[idx], masks[jdx])
                 else:
@@ -878,7 +884,46 @@ async def patch_muse_code_and_apply(
     except Exception as exc:
         return fail(f"{type(exc).__name__}: {exc}")
 
+    # Guarantee: the serving file on disk must actually differ from the
+    # pre-patch snapshot. A sandbox that reports success without writing
+    # (or writes a different root than the dev server serves) would make
+    # VERIFY screenshot the un-patched page, so fall back to a direct
+    # verified apply against the serving root, then fail closed.
+    import hashlib as _hl
+    from backend.core.patch import apply_parsed_patch as _apply_parsed
+    expected_text = _apply_parsed(snapshot.text, patch)
+    serving_file = None
+    try:
+        from backend.core.patch import repo_file_path as _rfp
+        serving_file = _rfp(state, target)
+    except Exception:
+        serving_file = None
+    on_disk = serving_file.read_bytes() if serving_file and serving_file.is_file() else b""
+    if on_disk != expected_text.encode("utf-8"):
+        try:
+            apply_and_commit(state, patch, snapshot)
+            on_disk = serving_file.read_bytes() if serving_file else b""
+        except Exception as exc:
+            return fail(f"patch did not mutate serving file {target}: {exc}")
+    if on_disk == snapshot.data or on_disk != expected_text.encode("utf-8"):
+        return fail(f"patch did not mutate serving file {target} on disk")
+    if sandbox_runner is not None:
+        for _fn in ("clear_render_cache", "invalidate_render_cache"):
+            if hasattr(sandbox_runner, _fn):
+                try:
+                    sandbox_runner.__getattribute__(_fn)()
+                except Exception:
+                    pass
+        if hasattr(sandbox_runner, "_geo_cache"):
+            try:
+                sandbox_runner._geo_cache.clear()
+            except Exception:
+                pass
+
     merged = dict(repair_spec)
+    merged["patch_verified_on_disk"] = True
+    merged["patched_file_sha_before"] = snapshot.sha256
+    merged["patched_file_sha_after"] = _hl.sha256(on_disk).hexdigest()
     merged["patch_status"] = "applied"
     merged.update(hmr_info)
     merged["patched_files"] = [target]
@@ -978,6 +1023,26 @@ async def verify_with_sam(
         raw_metrics = metrics_from_anomalies(state.anomalies) or None
     elif raw_metrics is None:
         before = list(state.anomalies)
+        # Never verify against a cached pre-patch render.
+        if sandbox_runner is not None:
+            for _fn in ("clear_render_cache", "invalidate_render_cache"):
+                if hasattr(sandbox_runner, _fn):
+                    try:
+                        _r = sandbox_runner.__getattribute__(_fn)()
+                        if inspect.isawaitable(_r):
+                            await _r
+                    except Exception:
+                        pass
+            if hasattr(sandbox_runner, "_geo_cache"):
+                try:
+                    sandbox_runner._geo_cache.clear()
+                except Exception:
+                    pass
+            if hasattr(sandbox_runner, "wait_for_settle"):
+                try:
+                    await sandbox_runner.wait_for_settle()
+                except Exception:
+                    pass
         sense_fn = globals().get("sense_with_playwright_and_sam", sense_with_playwright_and_sam)
         try:
             await _call_node(sense_fn, state, sandbox_runner=sandbox_runner, sam_client=sam_client, resense=True)
@@ -1350,6 +1415,13 @@ async def _drive_fsm(
             if state.is_resolved or (latest is not None and latest.passed):
                 state.is_resolved = True
                 state.transition_to(FSMStep.VERIFY, RunStatus.RESOLVED)
+                if state.pr_number:
+                    try:
+                        from backend.api.github_repos import auto_publish_github_telemetry_and_commit
+                        gh_tok = getattr(orchestrator.github_client, "token", "") if orchestrator.github_client else ""
+                        await auto_publish_github_telemetry_and_commit(state, gh_tok)
+                    except Exception as e:
+                        logger.warning(f"Auto-publish to GitHub caught: {e}")
                 if use_events:
                     await _broadcast(event_broadcast, "RUN_RESOLVED", state)
                 break
@@ -1379,7 +1451,8 @@ async def _drive_fsm(
     # commit exactly the authorized verified files; 3-strike failures get
     # a non-destructive unverified suggestion. Never raises, never forces.
     github = orchestrator.github_client
-    if (github is not None or getattr(settings, "GITHUB_APP_ID", "")) and state.attempts:
+    if (github is not None or getattr(settings, "GITHUB_APP_ID", "")
+            or getattr(settings, "GITHUB_PAT", "")) and state.attempts:
         from backend.core.github_publish import publish_run_result
         await publish_run_result(state, github)
     return state

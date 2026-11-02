@@ -141,7 +141,7 @@ async def _run_agent_lifecycle_hydrated(state: AgentState, token: str = "") -> N
         logger.error(f"Sandbox runner binding failed for run {state.run_id}: {runner_err}")
     try:
         try:
-            await asyncio.wait_for(_run_agent_lifecycle(state, sandbox_runner=runner), timeout=180.0)
+            await asyncio.wait_for(_run_agent_lifecycle(state, sandbox_runner=runner, github_token=token), timeout=180.0)
         except TypeError:
             await asyncio.wait_for(_run_agent_lifecycle(state), timeout=180.0)
     except asyncio.TimeoutError:
@@ -164,7 +164,7 @@ async def _run_agent_lifecycle_hydrated(state: AgentState, token: str = "") -> N
                 pass
 
 
-async def _run_agent_lifecycle(state: AgentState, sandbox_runner: Any = None) -> None:
+async def _run_agent_lifecycle(state: AgentState, sandbox_runner: Any = None, github_token: str = "") -> None:
     """Asynchronous background worker for run_visor_agent.
 
     Ensures lifecycle safety, fresh DB session isolation, and FSM failure handling.
@@ -174,8 +174,24 @@ async def _run_agent_lifecycle(state: AgentState, sandbox_runner: Any = None) ->
         from backend.core.orchestrator import run_visor_agent
 
         logger.info(f"Dispatching autonomous QA agent for run {state.run_id} ({state.repo_full_name} PR #{state.pr_number})")
+        _gh = None
+        if github_token:
+            try:
+                from backend.adapters.github_client import GitHubClient
+                _gh = GitHubClient(token=github_token)
+            except Exception:
+                _gh = None
         final_state = await run_visor_agent(
-            state, ws_broadcast=ws_broadcast, sandbox_runner=sandbox_runner)
+            state, ws_broadcast=ws_broadcast, sandbox_runner=sandbox_runner, github_client=_gh)
+
+        # Workstream 3: If resolved and associated with a GitHub PR, auto-publish fix & comment
+        if final_state.is_resolved and final_state.pr_number:
+            try:
+                from backend.api.github_repos import auto_publish_github_telemetry_and_commit
+                tok = github_token or getattr(_gh, "token", "") or ""
+                await auto_publish_github_telemetry_and_commit(final_state, tok)
+            except Exception as pub_err:
+                logger.error(f"Failed to auto-publish GitHub fix/comment for run {state.run_id}: {pub_err}")
 
         # Workstream 1: persist per-attempt telemetry + artifacts (non-fatal).
         try:

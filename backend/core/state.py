@@ -290,6 +290,8 @@ class AgentState(BaseModel):
     github_commit_pushed: bool = False
     github_review_comment_posted: bool = False
     github_commit_sha: Optional[str] = None
+    github_commit_url: Optional[str] = None
+    pr_comment_url: Optional[str] = None
     github_publication_status: str = "not_attempted"  # not_attempted|commit_pushed|review_comment_posted|suggestion_posted|conflict|error
     github_error: Optional[str] = None
 

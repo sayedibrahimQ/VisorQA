@@ -449,7 +449,7 @@ class CreateRunRequest(BaseModel):
     commit_sha: str = ""
     # Workstream 2 (A3): optionally dispatch the FSM in the background so
     # the run streams live WS updates and persists final artifacts.
-    dispatch: bool = False
+    dispatch: bool = True
     anomalies: List[Dict[str, Any]] = []
 
 

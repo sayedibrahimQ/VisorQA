@@ -110,6 +110,81 @@ def get_e2b_traffic_headers(url: Optional[str], sandbox: Any = None) -> Dict[str
     return {E2B_TRAFFIC_HEADER: token}
 
 
+def _el_id(item: Dict[str, Any]) -> str:
+    return str(item.get("element_id") or item.get("visor_el_id") or item.get("data-visor-id") or "")
+
+
+def _box_of(item: Dict[str, Any]) -> Dict[str, float]:
+    box = item.get("bounding_box") or item.get("b_dom_box") or item
+    return {k: float(box.get(k, 0.0) or 0.0) for k in ("x", "y", "width", "height")}
+
+
+def is_ancestor_pair(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    """True when one element is an ancestor/wrapper of the other.
+
+    Explicit DOM evidence (contains/ancestor/parent ids emitted by the
+    geometry JS) wins; otherwise a box enclosing >80% of the other box
+    is a wrapper, never an occluder.
+    """
+    ida, idb = _el_id(a), _el_id(b)
+    for src, dst in ((a, idb), (b, ida)):
+        if not dst:
+            continue
+        contains = src.get("contains_ids") or src.get("descendant_ids") or []
+        ancestors = src.get("ancestor_ids") or src.get("ancestor_visor_ids") or []
+        if dst in contains or dst in ancestors:
+            return True
+        parent = src.get("parent_visor_id") or src.get("parent_id") or ""
+        if dst and parent == dst:
+            return True
+    ba, bb = _box_of(a), _box_of(b)
+    area_a, area_b = ba["width"] * ba["height"], bb["width"] * bb["height"]
+    if area_a <= 0 or area_b <= 0:
+        return False
+    ix = max(0.0, min(ba["x"] + ba["width"], bb["x"] + bb["width"]) - max(ba["x"], bb["x"]))
+    iy = max(0.0, min(ba["y"] + ba["height"], bb["y"] + bb["height"]) - max(ba["y"], bb["y"]))
+    inter = ix * iy
+    # A wrapper encloses >80% of a smaller descendant (page/card/container vs leaf).
+    # A leaf occluder fully covering a similar-size victim (promo banner over CTA, ~1.6x)
+    # is a collision defect, not ancestry. A true container wrapper is much larger (>=2.5x).
+    if inter >= 0.8 * min(area_a, area_b) and max(area_a, area_b) >= 2.5 * min(area_a, area_b):
+        return True
+    return False
+
+
+def leaf_collision_pairs(elements: List[Dict[str, Any]]):
+    """(id_a, id_b, iou) for distinct leaf/sibling pairs only."""
+    out = []
+    leaf_candidates = []
+    for el in elements:
+        if el.get("is_container"):
+            continue
+        tag = str(el.get("tag") or "").lower()
+        if tag in ("main", "body", "html", "section", "article"):
+            continue
+        b = _box_of(el)
+        if b["width"] >= 340 and b["height"] >= 350:
+            continue
+        leaf_candidates.append(el)
+
+    for i in range(len(leaf_candidates)):
+        for j in range(i + 1, len(leaf_candidates)):
+            el_a = leaf_candidates[i]
+            el_b = leaf_candidates[j]
+            if is_ancestor_pair(el_a, el_b):
+                continue
+            ba, bb = _box_of(el_a), _box_of(el_b)
+            ix = max(0.0, min(ba["x"] + ba["width"], bb["x"] + bb["width"]) - max(ba["x"], bb["x"]))
+            iy = max(0.0, min(ba["y"] + ba["height"], bb["y"] + bb["height"]) - max(ba["y"], bb["y"]))
+            if ix <= 0 or iy <= 0:
+                continue
+            inter = ix * iy
+            union = ba["width"] * ba["height"] + bb["width"] * bb["height"] - inter
+            if union > 0:
+                out.append((_el_id(el_a), _el_id(el_b), inter / union))
+    return out
+
+
 def combine_sam_metrics(
     geometry: List[Dict[str, Any]],
     masks: List[Any],
@@ -152,24 +227,15 @@ def combine_sam_metrics(
         else:
             vrs.append(1.0)
 
-    # Check pairwise IoU
-    for i in range(len(active_elements)):
-        box_a = active_elements[i].get("bounding_box") or active_elements[i].get("b_dom_box") or active_elements[i]
-        ax, ay, aw, ah = float(box_a.get("x", 0)), float(box_a.get("y", 0)), float(box_a.get("width", 0)), float(box_a.get("height", 0))
-        for j in range(i + 1, len(active_elements)):
-            box_b = active_elements[j].get("bounding_box") or active_elements[j].get("b_dom_box") or active_elements[j]
-            bx, by, bw, bh = float(box_b.get("x", 0)), float(box_b.get("y", 0)), float(box_b.get("width", 0)), float(box_b.get("height", 0))
-
-            ix0 = max(ax, bx)
-            iy0 = max(ay, by)
-            ix1 = min(ax + aw, bx + bw)
-            iy1 = min(ay + ah, by + bh)
-
-            if ix1 > ix0 and iy1 > iy0:
-                inter = (ix1 - ix0) * (iy1 - iy0)
-                union = (aw * ah) + (bw * bh) - inter
-                iou = inter / union if union > 0 else 0.0
-                ious.append(iou)
+    # Pairwise IoU between leaf/sibling elements only: ancestor/wrapper
+    # containers (e.g. visor-el-03 enclosing the card) never occlude.
+    colliding_ids: List[str] = []
+    for ida, idb, iou in leaf_collision_pairs(active_elements):
+        ious.append(iou)
+        if iou > 0.05:
+            for eid in (ida, idb):
+                if eid and eid not in colliding_ids:
+                    colliding_ids.append(eid)
 
     # Mobile baseline special handling: if visor-el-04 and visor-el-09 collide on mobile baseline
     min_vr = min(vrs) if vrs else (0.0 if (name == "mobile" and not resense) else 1.0)
@@ -190,6 +256,7 @@ def combine_sam_metrics(
         "invalid_reason": None,
         "elements": active_elements,
         "b_dom": active_elements,
+        "colliding_ids": colliding_ids,
     }
 
 
@@ -231,11 +298,33 @@ def render_sam_mask_overlay(
 
     CRIMSON_FILL = (244, 63, 94, 90)     # #F43F5E 35% opacity
     CRIMSON_LINE = (244, 63, 94, 255)
-    CYAN_FILL = (0, 229, 255, 45)         # #00E5FF 18% opacity
-    CYAN_LINE = (0, 229, 255, 230)
+
+    # Drop wrapper/ancestor ids from the defect set: a container that
+    # encloses a colliding leaf (e.g. visor-el-03) is not the occluder.
+    def _is_wrapper(eid: str) -> bool:
+        me = next((e for e in elements if _el_id(e) == eid), None)
+        if me is None:
+            return False
+        if me.get("is_container"):
+            return True
+        b = _box_of(me)
+        if b["width"] >= 340 and b["height"] >= 350:
+            return True
+        tag = str(me.get("tag") or "").lower()
+        if tag in ("main", "body", "html", "section", "article"):
+            return True
+        return any(_el_id(o) != eid and is_ancestor_pair(me, o) for o in elements)
+
+    leaf_defect_ids = {e for e in defect_ids if not _is_wrapper(e)} if defect_ids else set()
+    if not leaf_defect_ids:
+        # No explicit leaf defects: derive from leaf collision geometry.
+        leaf_defect_ids = {eid for pair in leaf_collision_pairs(elements)
+                           if pair[2] > 0.05 for eid in pair[:2]}
 
     for el in elements:
         eid = str(el.get("element_id") or el.get("visor_el_id") or "")
+        if eid not in leaf_defect_ids:
+            continue  # highlight ONLY colliding leaf elements
         box = el.get("bounding_box") or el.get("b_dom_box") or el
         bx = float(box.get("x", 0.0))
         by = float(box.get("y", 0.0))
@@ -245,9 +334,7 @@ def render_sam_mask_overlay(
         if bw <= 0 or bh <= 0:
             continue
 
-        is_defect = eid in defect_ids or (eid in ("visor-el-04", "visor-el-09") and defect_ids)
-        fill = CRIMSON_FILL if is_defect else CYAN_FILL
-        line = CRIMSON_LINE if is_defect else CYAN_LINE
+        fill, line = CRIMSON_FILL, CRIMSON_LINE
 
         x0, y0 = int(round(bx)), int(round(by))
         x1, y1 = int(round(bx + bw)), int(round(by + bh))
@@ -267,4 +354,6 @@ __all__ = [
     "get_e2b_traffic_headers",
     "combine_sam_metrics",
     "render_sam_mask_overlay",
+    "is_ancestor_pair",
+    "leaf_collision_pairs",
 ]

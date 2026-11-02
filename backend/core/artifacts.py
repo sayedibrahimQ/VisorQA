@@ -656,6 +656,8 @@ def persist_run_telemetry(state: Any, store: Optional[ArtifactStore] = None) -> 
         "github_publication_status": getattr(state, "github_publication_status", "not_attempted"),
         "github_commit_pushed": bool(getattr(state, "github_commit_pushed", False)),
         "github_commit_sha": getattr(state, "github_commit_sha", None),
+        "github_commit_url": getattr(state, "github_commit_url", None),
+        "pr_comment_url": getattr(state, "pr_comment_url", None),
         "github_review_comment_posted": bool(
             getattr(state, "github_review_comment_posted", False)),
         "github_error": getattr(state, "github_error", None),
