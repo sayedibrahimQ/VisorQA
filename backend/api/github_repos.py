@@ -9,6 +9,7 @@ auth or missing run artifacts produce explicit 4xx responses.
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
 
