@@ -890,25 +890,7 @@ async def patch_muse_code_and_apply(
         patch = authorize_patch(parsed, state, target)
         check_patch_policy(normalized)
     except Exception as exc:
-        logger.warning(f"Muse Code patch proposal fallback ({exc}); synthesizing clean diff for {target}")
-        orig_text = snapshot.text
-        if "fixed bottom-5 inset-x-4 z-50" in orig_text:
-            fixed_text = orig_text.replace("fixed bottom-5 inset-x-4 z-50", "relative z-10 mb-4")
-        elif "fixed bottom-" in orig_text:
-            import re
-            fixed_text = re.sub(r'fixed bottom-[^\"]*', 'relative z-10 mb-4', orig_text)
-        else:
-            fixed_text = orig_text
-        import difflib
-        lines_orig = orig_text.splitlines(keepends=True)
-        lines_fixed = fixed_text.splitlines(keepends=True)
-        diff_lines = list(difflib.unified_diff(lines_orig, lines_fixed, fromfile=f"a/{target}", tofile=f"b/{target}"))
-        normalized = "".join(diff_lines)
-        if not normalized:
-            return fail(f"Muse Code patch proposal failed: {exc}")
-        parsed = parse_unified_diff(normalized)
-        patch = authorize_patch(parsed, state, target)
-        check_patch_policy(normalized)
+        return fail(f"Muse Code patch generation failed: {exc}")
 
     try:
         if sandbox_status is not None and getattr(sandbox_status, "working_dir", ""):
@@ -1042,7 +1024,9 @@ async def verify_with_sam(
     # --- Gather per-viewport evidence (explicit > recorded > re-sense) ---
     raw_metrics: Any = None
     screenshot_refs: Dict[str, Any] = {}
-    if existing is not None and existing.viewport_metrics:
+    if sandbox_runner is not None and hasattr(sandbox_runner, "extract_dom_geometry") and (getattr(sandbox_runner, "_e2b_active", False) or getattr(sandbox_runner, "working_dir", None)):
+        raw_metrics = None
+    elif existing is not None and existing.viewport_metrics:
         raw_metrics = existing.viewport_metrics
     if raw_metrics is None:
         spec0 = state.repair_spec if isinstance(state.repair_spec, dict) else {}
@@ -1371,16 +1355,18 @@ async def _drive_fsm(
         if use_events:
             await _broadcast(event_broadcast, "SENSE_STARTED", state)
 
-        # Node 1: SENSE (strict 35s timeout to prevent hanging)
+        # Node 1: SENSE (strict 60s timeout to allow dev boot + Playwright dual capture + Meta SAM)
         try:
-            state = await asyncio.wait_for(orchestrator.step_1_sense(state), timeout=35.0)
+            state = await asyncio.wait_for(orchestrator.step_1_sense(state), timeout=60.0)
         except asyncio.TimeoutError:
-            logger.error("Node 1 SENSE timed out after 35s")
+            logger.error("Node 1 SENSE timed out after 60s")
             state.is_resolved = False
             state.transition_to(FSMStep.VERIFY, RunStatus.FAILED)
             spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
             spec["sense_status"] = "capture_failed"
-            spec["sense_error"] = "SENSE stage timed out after 35s (target app boot/capture)"
+            spec["sense_error"] = "SENSE stage timed out after 60s (target app boot/capture)"
+            spec["stage_error"] = spec["sense_error"]
+            state.stage_error = spec["sense_error"]
             state.repair_spec = spec
             if use_events:
                 await _broadcast(event_broadcast, "RUN_HALTED", state)
@@ -1413,11 +1399,11 @@ async def _drive_fsm(
                 await orchestrator.emit_update(state)
             return state
 
-        # Node 2: TRIAGE (once per run, FR-04, 25s timeout)
+        # Node 2: TRIAGE (once per run, FR-04, 45s timeout)
         try:
-            state = await asyncio.wait_for(orchestrator.step_2_triage(state), timeout=25.0)
+            state = await asyncio.wait_for(orchestrator.step_2_triage(state), timeout=45.0)
         except asyncio.TimeoutError:
-            logger.warning("Node 2 TRIAGE timed out after 25s; using fallback target files")
+            logger.warning("Node 2 TRIAGE timed out after 45s; using fallback target files")
         if use_events:
             await _broadcast(event_broadcast, "TRIAGE_COMPLETE", state)
 
@@ -1426,17 +1412,19 @@ async def _drive_fsm(
             state.attempt += 1
             state.strike_count = state.attempt
             try:
-                state = await asyncio.wait_for(orchestrator.step_3_diagnose(state), timeout=30.0)
-                state = await asyncio.wait_for(orchestrator.step_4_patch(state), timeout=30.0)
+                state = await asyncio.wait_for(orchestrator.step_3_diagnose(state), timeout=60.0)
+                state = await asyncio.wait_for(orchestrator.step_4_patch(state), timeout=60.0)
                 # A PATCH implementation may have recorded the attempt
                 # (legacy mock point); adopt its diff as current_patch.
                 if not state.current_patch and state.attempts:
                     latest = state.attempts[-1]
                     if latest.attempt_number == state.attempt and latest.patch_diff:
                         state.current_patch = latest.patch_diff
-                state = await asyncio.wait_for(orchestrator.step_5_verify(state), timeout=35.0)
+                state = await asyncio.wait_for(orchestrator.step_5_verify(state), timeout=60.0)
             except Exception as exc:
                 # Record the failed strike and continue; never loop forever.
+                spec = dict(state.repair_spec) if isinstance(state.repair_spec, dict) else {}
+                fallback_metrics = spec.get("viewport_metrics") or spec.get("viewport_evaluations") or {}
                 if not any(a.attempt_number == state.attempt for a in state.attempts):
                     state.attempts.append(
                         SelfHealingAttempt(
@@ -1444,11 +1432,14 @@ async def _drive_fsm(
                             patch_diff=state.current_patch or None,
                             passed=False,
                             error_message=str(exc),
+                            viewport_metrics=dict(fallback_metrics),
                         )
                     )
                 else:
                     state.attempts[-1].passed = False
                     state.attempts[-1].error_message = str(exc)
+                    if not state.attempts[-1].viewport_metrics and fallback_metrics:
+                        state.attempts[-1].viewport_metrics = dict(fallback_metrics)
                 state.is_resolved = False
                 state.transition_to(FSMStep.VERIFY)
 

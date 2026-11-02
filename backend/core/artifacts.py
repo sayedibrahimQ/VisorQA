@@ -534,10 +534,11 @@ def build_run_payload(
         att_diff = raw.get("unified_diff") or raw.get("patch_diff")
         if not att_diff and (is_res or raw.get("passed")):
             att_diff = default_diff
+        att_metrics = raw.get("viewport_metrics") or _baseline_metrics
         telemetry = build_attempt_telemetry(
             attempt_number=num,
             anomalies=by_attempt.get(num, []),
-            viewport_metrics=raw.get("viewport_metrics"),
+            viewport_metrics=att_metrics,
             repair_spec=raw.get("repair_spec") or repair_spec_state,
             diff=att_diff,
             target_files=target_files, sandbox=sandbox,
@@ -570,6 +571,8 @@ def build_run_payload(
         "commit_sha": run.get("commit_sha", ""),
         "status": run.get("status", "PENDING"),
         "current_step": run.get("current_step", "1.SENSE"),
+        "stage_error": run.get("stage_error") or repair_spec_state.get("stage_error") or repair_spec_state.get("sense_error") or run.get("error"),
+        "error": run.get("error") or run.get("stage_error") or repair_spec_state.get("stage_error") or repair_spec_state.get("sense_error"),
         "strikes": strikes,
         "attempt": strikes,
         "max_attempts": int(run.get("max_attempts", 3) or 3),

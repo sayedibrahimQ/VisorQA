@@ -141,11 +141,11 @@ async def _run_agent_lifecycle_hydrated(state: AgentState, token: str = "") -> N
         logger.error(f"Sandbox runner binding failed for run {state.run_id}: {runner_err}")
     try:
         try:
-            await asyncio.wait_for(_run_agent_lifecycle(state, sandbox_runner=runner, github_token=token), timeout=180.0)
+            await asyncio.wait_for(_run_agent_lifecycle(state, sandbox_runner=runner, github_token=token), timeout=300.0)
         except TypeError:
-            await asyncio.wait_for(_run_agent_lifecycle(state), timeout=180.0)
+            await asyncio.wait_for(_run_agent_lifecycle(state), timeout=300.0)
     except asyncio.TimeoutError:
-        logger.error(f"Run {state.run_id} timed out after 180s total execution budget")
+        logger.error(f"Run {state.run_id} timed out after 300s total execution budget")
         state.status = RunStatus.FAILED
         state.is_resolved = False
         try:
