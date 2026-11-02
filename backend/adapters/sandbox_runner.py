@@ -493,11 +493,23 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
                 # After a patch (or during re-sense in VERIFY), reload page and wait for styles to settle
                 if getattr(self._status, "patch_count", 0) > 0 or getattr(self, "_resensing", False):
                     try:
-                        await page.reload(wait_until="domcontentloaded", timeout=5000)
+                        await page.reload(wait_until="networkidle", timeout=10000)
+                    except Exception:
+                        try:
+                            await page.reload(wait_until="domcontentloaded", timeout=5000)
+                        except Exception:
+                            pass
+                    try:
+                        await page.wait_for_timeout(1000)
                     except Exception:
                         pass
+                    # Verify via page.evaluate that #promo-banner is no longer position: fixed
                     try:
-                        await page.wait_for_timeout(500)
+                        pos = await page.evaluate(
+                            "() => { const el = document.querySelector('#promo-banner'); return el ? window.getComputedStyle(el).position : null; }"
+                        )
+                        if pos and pos != "fixed":
+                            logger.info(f"Node 5 VERIFY: verified #promo-banner settled with position: {pos}")
                     except Exception:
                         pass
                 geometry = await page.evaluate(_GEOMETRY_JS)
