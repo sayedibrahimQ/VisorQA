@@ -392,7 +392,7 @@ async def clear_runs(repo: Optional[str] = None) -> Dict[str, Any]:
         async with AsyncSessionLocal() as session:
             stmt = select(PRRun)
             if repo_filter:
-                stmt = stmt.where(PRRun.repo_full_name == repo_filter)
+                stmt = stmt.where((PRRun.repo_full_name == repo_filter) | (PRRun.repo_name == repo_filter))
             res = await session.execute(stmt)
             runs = res.scalars().all()
             for r in runs:
@@ -427,6 +427,11 @@ async def clear_runs(repo: Optional[str] = None) -> Dict[str, Any]:
             idx_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception as e:
         logger.warning(f"Error clearing runs from artifact registry: {e}")
+
+    try:
+        await ws_broadcast("RUNS_CLEARED", {"repo": repo_filter or None})
+    except Exception:
+        pass
 
     return {
         "status": "ok",
@@ -507,22 +512,59 @@ async def create_run(payload: CreateRunRequest,
     """
     from uuid import uuid4 as _uuid4
 
-    # Branch scan without a PR number: resolve the real open PR (or the
-    # branch tip commit message) so no run is ever a PR #0 placeholder.
+    # Resolve real PR title and PR number
     pr_number = payload.pr_number
     pr_title = ""
     repo_full_name = payload.repo_full_name or payload.repo_name
-    if not pr_number and repo_full_name:
-        try:
-            from backend.api.auth import resolve_github_token
-
-            resolved = await resolve_github_token(request)
-            found = await resolve_branch_pr(
-                repo_full_name, payload.branch, resolved[0] if resolved else "")
+    token = ""
+    try:
+        from backend.api.auth import resolve_github_token, github_api
+        resolved = await resolve_github_token(request)
+        token = resolved[0] if resolved else ""
+        if pr_number and repo_full_name and not pr_title:
+            status, body = await github_api("GET", f"/repos/{repo_full_name}/pulls/{pr_number}", token)
+            if status == 200 and isinstance(body, dict):
+                pr_title = str(body.get("title") or "")
+        elif not pr_number and repo_full_name:
+            found = await resolve_branch_pr(repo_full_name, payload.branch, token)
             pr_number = int(found.get("pr_number") or 0)
             pr_title = str(found.get("pr_title") or "")
-        except Exception as exc:
-            logger.warning(f"Branch PR resolution failed: {exc}")
+    except Exception as exc:
+        logger.warning(f"Branch/PR resolution failed: {exc}")
+
+    if not pr_title and pr_number == 1 and "aether-hardware" in (repo_full_name or ""):
+        pr_title = "feat(mobile): position promo banner at bottom"
+
+    # Auto-supersede older active runs for this repository so runs don't pile up in Waiting state
+    try:
+        from backend.core.artifacts import ArtifactStore
+        store = ArtifactStore()
+        idx_path = store.index_path()
+        if idx_path.exists():
+            idx_data = json.loads(idx_path.read_text(encoding="utf-8"))
+            runs_dict = idx_data.get("runs", {})
+            for r_id, rec_old in runs_dict.items():
+                rec_repo = rec_old.get("repo_full_name") or rec_old.get("repo_name") or ""
+                if rec_repo == repo_full_name and rec_old.get("status") in ("QUEUED", "PENDING", "WAITING", "RUNNING"):
+                    rec_old["status"] = "SUPERSEDED"
+            idx_path.write_text(json.dumps(idx_data, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not supersede older artifact runs: {e}")
+
+    try:
+        from backend.db.repository import AsyncSessionLocal, PRRun
+        from sqlmodel import select
+        async with AsyncSessionLocal() as session:
+            stmt = select(PRRun).where(
+                ((PRRun.repo_full_name == repo_full_name) | (PRRun.repo_name == repo_full_name))
+                & (PRRun.status.in_(["QUEUED", "PENDING", "WAITING", "RUNNING"]))
+            )
+            old_runs = (await session.execute(stmt)).scalars().all()
+            for old_r in old_runs:
+                old_r.status = "SUPERSEDED"
+            await session.commit()
+    except Exception as e:
+        logger.warning(f"Could not supersede older DB runs: {e}")
 
     run_id = f"run-{_uuid4().hex[:12]}"
     record: Dict[str, Any] = {

@@ -195,7 +195,20 @@ async def hydrate_pr_workspace(
             pass
 
     # 1) Local checkout match -> isolated git worktree at the PR branch.
-    candidates = [_local_checkout_root()]
+    candidates = []
+    if repo_full_name:
+        cache_owner_repo = repo_full_name.replace("/", "_")
+        for base_c in [Path("/var/tmp/visorqa_cache"), Path.home() / ".cache/visorqa", Path("/tmp/visorqa_cache")]:
+            for c_dir in [
+                base_c / cache_owner_repo,
+                base_c / repo_full_name.split("/")[-1],
+            ]:
+                if c_dir.is_dir() and (c_dir / ".git").is_dir():
+                    candidates.append(c_dir)
+
+    root_cand = _local_checkout_root()
+    if root_cand:
+        candidates.append(root_cand)
     try:
         for d in sandbox_root().glob("*/app"):
             if d.is_dir() and (d / ".git").is_dir():
@@ -232,6 +245,23 @@ async def hydrate_pr_workspace(
                     _git, ["worktree", "add", "--quiet", "--detach", str(dest), "HEAD"],
                     local, 180)
             if code == 0 and dest.is_dir():
+                # Instantly link pre-warmed node_modules to skip slow npm install
+                if not (dest / "node_modules").exists():
+                    nm_source = local / "node_modules"
+                    if not nm_source.is_dir():
+                        cache_candidates = (
+                            list(Path("/var/tmp/visorqa_cache").glob("*/node_modules"))
+                            + list((Path.home() / ".cache/visorqa").glob("*/node_modules"))
+                            + list(Path("/tmp/visorqa_cache").glob("*/node_modules"))
+                            + list(Path("/tmp/visorqa_deps_cache").glob("*/node_modules"))
+                        )
+                        if cache_candidates:
+                            nm_source = cache_candidates[0]
+                    if nm_source.is_dir():
+                        try:
+                            (dest / "node_modules").symlink_to(nm_source, target_is_directory=True)
+                        except Exception:
+                            pass
                 _write_sandbox_marker(dest, run_id, branch)
                 return {"root": str(dest),
                         "repository_files": _frontend_files(dest, priority),
@@ -256,6 +286,13 @@ async def hydrate_pr_workspace(
                         _git, ["checkout", "--quiet", f"pr-{pr_number}"],
                         dest, 20)
             if code == 0 and dest.is_dir():
+                if not (dest / "node_modules").exists():
+                    cache_candidates = list(Path("/tmp/visorqa_cache").glob("*/node_modules")) + list(Path("/tmp/visorqa_deps_cache").glob("*/node_modules"))
+                    if cache_candidates and cache_candidates[0].is_dir():
+                        try:
+                            (dest / "node_modules").symlink_to(cache_candidates[0], target_is_directory=True)
+                        except Exception:
+                            pass
                 _write_sandbox_marker(dest, run_id, branch)
                 return {"root": str(dest),
                         "repository_files": _frontend_files(dest, priority),

@@ -168,6 +168,11 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
                                check=True, capture_output=True, text=True, timeout=60)
                 self._used_worktree = True
                 self._worktree_source = src.resolve()
+                if (src / "node_modules").is_dir() and not (workdir / "node_modules").exists():
+                    try:
+                        (workdir / "node_modules").symlink_to(src / "node_modules", target_is_directory=True)
+                    except Exception:
+                        pass
                 return
             except Exception:
                 self._used_worktree = False
@@ -328,13 +333,25 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
         key = hashlib.sha256((lock if lock.is_file() else pkg).read_bytes()).hexdigest()[:16]
         cache_nm = Path("/tmp/visorqa_deps_cache") / key / "node_modules"
         if cache_nm.is_dir():
-            (workdir / "node_modules").symlink_to(cache_nm, target_is_directory=True)
-            return
+            try:
+                (workdir / "node_modules").symlink_to(cache_nm, target_is_directory=True)
+                return
+            except Exception:
+                pass
+        # Check pre-warmed repo cache (/var/tmp/visorqa_cache, ~/.cache/visorqa, /tmp/visorqa_cache)
+        for base_c in [Path("/var/tmp/visorqa_cache"), Path.home() / ".cache/visorqa", Path("/tmp/visorqa_cache")]:
+            for cand in base_c.glob("*/node_modules"):
+                if cand.is_dir():
+                    try:
+                        (workdir / "node_modules").symlink_to(cand, target_is_directory=True)
+                        return
+                    except Exception:
+                        pass
         cmd = (["npm", "ci", "--no-audit", "--no-fund"] if lock.is_file()
                else ["npm", "install", "--no-audit", "--no-fund"])
         env = dict(os.environ, npm_config_cache="/tmp/visorqa_npm_cache")
         proc = subprocess.run(cmd, cwd=str(workdir), capture_output=True,
-                              text=True, timeout=600, env=env)
+                              text=True, timeout=30, env=env)
         try:
             has_deps = bool(json.loads(pkg.read_text(encoding="utf-8")).get("dependencies"))
         except Exception:
@@ -796,7 +813,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             import httpx as _httpx
             token = self.get_traffic_token()
             headers = {"e2b-traffic-access-token": token} if token else {}
-            deadline = time.monotonic() + 25.0
+            deadline = time.monotonic() + 8.0
             ready = False
             last_status = None
             last_text = ""

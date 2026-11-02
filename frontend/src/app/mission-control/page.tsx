@@ -233,14 +233,21 @@ export default function MissionControlPage() {
       return null;
     }
     const reasons: string[] = [];
+    const rootSpec = (details as Record<string, unknown> | null | undefined)?.repair_spec as Record<string, unknown> | null | undefined;
+    for (const key of ["sense_error", "patch_error", "diagnose_error", "triage_error"]) {
+      const v = rootSpec?.[key];
+      if (typeof v === "string" && v && !reasons.includes(v)) reasons.push(v);
+    }
     for (const att of details?.attempts ?? []) {
       const spec = att.repair_spec as Record<string, unknown> | null | undefined;
       for (const key of ["sense_error", "patch_error", "diagnose_error", "triage_error"]) {
         const v = spec?.[key];
         if (typeof v === "string" && v && !reasons.includes(v)) reasons.push(v);
       }
-      for (const r of att.verification_feedback?.failure_reasons ?? []) {
-        if (r && !reasons.includes(r)) reasons.push(r);
+      if (att.attempt_number > 0 || att.verification_feedback?.dual_viewport_passed !== null) {
+        for (const r of att.verification_feedback?.failure_reasons ?? []) {
+          if (r && !reasons.includes(r)) reasons.push(r);
+        }
       }
     }
     return reasons.length > 0

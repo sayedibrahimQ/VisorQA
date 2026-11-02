@@ -15,7 +15,11 @@ from fastapi.staticfiles import StaticFiles
 from backend.config import settings
 from backend.core.artifacts import artifacts_root as _artifacts_root_fn
 from backend.api.webhooks import router as webhooks_router
-from backend.api.routes_ws import router as ws_router, mission_control_ws_endpoint
+from backend.api.routes_ws import (
+    router as ws_router,
+    mission_control_ws_endpoint,
+    websocket_run_endpoint,
+)
 from backend.api.auth import router as auth_router
 from backend.api.settings import router as settings_router
 from backend.api.github_repos import router as github_router, runs_router as github_runs_router
@@ -91,8 +95,11 @@ _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/api/artifacts", StaticFiles(directory=str(_ARTIFACTS_DIR)),
           name="api-artifacts")
 
-# Mount root WebSocket endpoint for Jira requirement /ws/mission-control
+# Mount root & API WebSocket endpoints for Mission Control and per-run telemetry
 app.add_api_websocket_route("/ws/mission-control", mission_control_ws_endpoint)
+app.add_api_websocket_route("/api/ws/mission-control", mission_control_ws_endpoint)
+app.add_api_websocket_route("/ws/runs/{run_id}", websocket_run_endpoint)
+app.add_api_websocket_route("/api/ws/runs/{run_id}", websocket_run_endpoint)
 
 
 @app.get("/health", tags=["System"])

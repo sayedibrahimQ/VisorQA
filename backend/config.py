@@ -90,9 +90,8 @@ class Settings(BaseSettings):
     # is kept as a backward-compatible alias. Factory resolution: an explicit
     # non-default value in either wins; both default to "local".
     SANDBOX_BACKEND: str = Field(default="local", description="Sandbox backend: local | modal | stub")
-    # Canonical provider: "e2b" | "local" | "modal" | "stub". Empty means
-    # auto: "e2b" when E2B_API_KEY is set, else "local".
-    SANDBOX_PROVIDER: str = Field(default="", description="Sandbox provider: e2b | local | modal | stub (empty = auto)")
+    # Canonical provider: "local" (default fast local worktree runner) | "e2b" | "modal" | "stub"
+    SANDBOX_PROVIDER: str = Field(default="local", description="Sandbox provider: e2b | local | modal | stub")
     E2B_API_KEY: str = Field(default="", description="E2B cloud sandbox API key")
     E2B_SANDBOX_TIMEOUT_SECONDS: int = Field(default=180, description="E2B sandbox lifetime bound")
     TARGET_APP_PATH: str = Field(default="./demo-target-app", description="Source target app directory")
