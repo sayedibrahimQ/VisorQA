@@ -227,15 +227,14 @@ def build_triage_context(state: AgentState) -> Dict[str, Any]:
         else:
             other_hierarchy.append(rec)
 
-    # Keep at most 6 hierarchy records to prevent payload blowup
-    selected_hierarchy = (relevant_hierarchy + other_hierarchy)[:6]
+    hierarchy = (relevant_hierarchy + other_hierarchy) if anomaly_ids else raw_hierarchy
 
     context: Dict[str, Any] = {
         "repository_files": extract_file_tree(spec),
         "anomalies": [a.model_dump(mode="json") for a in state.anomalies],
         "lca_dom": spec.get("lca_dom", {}),
         "lca_element_id": spec.get("lca_element_id"),
-        "hierarchy": selected_hierarchy,
+        "hierarchy": hierarchy,
         "computed_styles": spec.get("computed_styles")
         or spec.get("computed_css") or {},
         "existing_target_files": list(state.target_files),
@@ -248,8 +247,8 @@ def build_triage_context(state: AgentState) -> Dict[str, Any]:
     # Bound the serialized context; the file tree is the bulkiest part.
     text = json.dumps(context, default=str)
     if len(text) > _MAX_CONTEXT_CHARS:
-        context["repository_files"] = context["repository_files"][:100]
-        context["hierarchy"] = context["hierarchy"][:3]
+        context["repository_files"] = context["repository_files"][:200]
+        context["hierarchy"] = context["hierarchy"][:20]
         context["context_truncated"] = True
     return context
 
