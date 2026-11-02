@@ -404,13 +404,32 @@ export default function MissionControlPage() {
             </p>
             <div
               data-testid="connection-status"
-              className="mt-1 font-mono text-xs text-text-secondary"
+              className="mt-1 flex items-center gap-1.5 font-mono text-xs text-text-secondary"
             >
-              {status}
-              {status === "reconnecting" ? ` (retry ${reconnectAttempt})` : ""}
-              {focusLatencyMs !== null
-                ? ` · focus ${focusLatencyMs.toFixed(0)}ms`
-                : ""}
+              <span
+                className={cn(
+                  "inline-block h-2 w-2 rounded-full",
+                  status === "open"
+                    ? "bg-emerald-400"
+                    : status === "reconnecting" && reconnectAttempt >= 2
+                    ? "bg-emerald-400/80 animate-pulse"
+                    : status === "reconnecting"
+                    ? "bg-amber-400 animate-pulse"
+                    : "bg-text-muted/60",
+                )}
+              />
+              <span>
+                {status === "open"
+                  ? "open"
+                  : status === "reconnecting" && reconnectAttempt >= 2
+                  ? `live (polling) · ws reconnecting (retry ${reconnectAttempt})`
+                  : status === "reconnecting"
+                  ? `reconnecting (retry ${reconnectAttempt})`
+                  : status}
+                {focusLatencyMs !== null
+                  ? ` · focus ${focusLatencyMs.toFixed(0)}ms`
+                  : ""}
+              </span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">

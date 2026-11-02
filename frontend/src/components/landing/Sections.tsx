@@ -72,7 +72,7 @@ export function ModelStrip() {
       icon: Code2,
     },
     {
-      name: "Modal + Playwright",
+      name: "E2B + Playwright",
       role: "Sandbox & HMR",
       desc: "Dual-viewport hot reload",
       latency: "0.3s",
@@ -246,7 +246,7 @@ const FSM_STEPS: FSMStepData[] = [
     outputs: "Binary pixel mask M_SAM, Discrepancy math (Vr = 0.45, IoU = 0.16, Δx = 37px)",
     telemetry: "[00:01.8] SAM 3.1 segmented component visor-el-04: Vr = 0.45 < 0.85 (DEFECT DETECTED)",
     summary:
-      "Boots ephemeral Modal container, extracts DOM geometry B_DOM, and prompts SAM 3.1 with center coordinates to compute exact pixel overlap.",
+      "Boots ephemeral cloud sandbox, extracts DOM geometry B_DOM, and prompts SAM 3.1 with center coordinates to compute exact pixel overlap.",
   },
   {
     id: "02",
@@ -276,11 +276,11 @@ const FSM_STEPS: FSMStepData[] = [
     id: "04",
     key: "PATCH",
     name: "Patch",
-    model: "Meta Muse Code + Modal HMR",
+    model: "Meta Muse Code + Live HMR",
     latency: "~1.2s synth + 0.3s HMR",
     inputs: "RepairSpec JSON, Target file bytes, Anti-hack policy rules (no !important)",
     outputs: "Surgical Unified Diff applied via Hot Module Replacement in 0.3s",
-    telemetry: "[00:07.1] Muse Code synthesized 4-line patch. Modal HMR applied in 284ms.",
+    telemetry: "[00:07.1] Muse Code synthesized 4-line patch. Live HMR applied in 284ms.",
     summary:
       "Synthesizes minimal unified diff, passes anti-hack CSS screening, and injects patch directly into running Next.js container via HMR.",
   },
@@ -439,7 +439,7 @@ const TRACE_EVENTS = [
   {
     timestamp: "00:07.2",
     step: "PATCH",
-    message: "Muse Code diff synthesized & applied via Modal HMR in 0.3s",
+    message: "Muse Code diff synthesized & applied via Live HMR in 0.3s",
   },
   {
     timestamp: "00:09.1",
@@ -576,7 +576,7 @@ export function ArchitectureBento() {
       title: "Sandboxed Runners & Fast HMR",
       kicker: "PILLAR 04 · EXECUTION ENVIRONMENT",
       detail:
-        "PR branches boot in isolated Modal cloud containers. Verified patches are injected directly into running Next.js processes via Hot Module Replacement in 0.3s, avoiding 15-second server reboot delays.",
+        "PR branches boot in isolated cloud and local sandboxes. Verified patches are injected directly into running Next.js processes via Hot Module Replacement in 0.3s, avoiding 15-second server reboot delays.",
       badge: "0.3s Hot Reload",
       span: "lg:col-span-4",
       icon: Zap,
@@ -668,7 +668,7 @@ export function ArchitectureBento() {
           <div className="p-3.5 rounded bg-canvas/80 border border-border-subtle hover:border-emerald-500/30 transition-colors">
             <span className="text-emerald-400 font-semibold block mb-1">ADR-004: Architect-Coder + HMR</span>
             <p className="text-text-secondary text-[11px] leading-relaxed">
-              Rejected monolithic LLM rewriting and 15s server restarts; chosen Muse Wonder JSON spec + Muse Code diffs with 0.3s Modal HMR.
+              Rejected monolithic LLM rewriting and 15s server restarts; chosen Muse Wonder JSON spec + Muse Code diffs with 0.3s Live HMR.
             </p>
           </div>
         </div>
@@ -766,7 +766,7 @@ const FAQS = [
   },
   {
     q: "How does VisorQA prevent regressions on other viewports?",
-    a: "Every PR branch is rendered simultaneously at 375px (Mobile) and 1440px (Desktop) inside isolated Modal sandboxes. Under Business Rule BR-3, a patch is accepted if and only if Vr >= 0.98, IoU = 0.00, and Δx <= 2px on both viewports simultaneously. If a mobile banner fix breaks a desktop multi-column grid, the dual-viewport gate fails and feeds cross-viewport error coordinates to Strike 2.",
+    a: "Every PR branch is rendered simultaneously at 375px (Mobile) and 1440px (Desktop) inside isolated sandboxes. Under Business Rule BR-3, a patch is accepted if and only if Vr >= 0.98, IoU = 0.00, and Δx <= 2px on both viewports simultaneously. If a mobile banner fix breaks a desktop multi-column grid, the dual-viewport gate fails and feeds cross-viewport error coordinates to Strike 2.",
   },
   {
     q: "What happens if the agent cannot resolve a defect within 3 attempts?",
