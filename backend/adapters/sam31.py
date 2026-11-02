@@ -408,6 +408,16 @@ class PointGuidedSAM31Client:
                 await self._sleep(self.backoff_base_seconds * (2 ** attempt))
                 attempt += 1
 
+    async def generate_component_masks(
+        self,
+        screenshot_bytes: bytes,
+        bounding_boxes: List[Dict[str, float]],
+    ) -> List[np.ndarray]:
+        """Produce 2D binary numpy component masks matching screenshot shape."""
+        from backend.adapters.muse_clients import SAM31Client
+        client = SAM31Client(api_key=self.api_key, base_url=self.base_url)
+        return await client.generate_component_masks(screenshot_bytes, bounding_boxes)
+
     async def segment_viewport(
         self,
         screenshot_png: bytes,

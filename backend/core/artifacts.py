@@ -763,6 +763,12 @@ def capture_sense_artifacts(
                                  _png_of(mask_img))
         entries.append({**saved, "kind": "sam_mask", "synthetic": False})
         try:
+            flat_mask = store.root / run_id / "sam_mask.png"
+            if not flat_mask.exists() or viewport == "mobile":
+                flat_mask.write_bytes(_png_of(mask_img))
+        except Exception:
+            pass
+        try:
             from backend.browser.overlay import render_overlay_image
             from backend.browser.schemas import DefectRegion
 
@@ -773,12 +779,22 @@ def capture_sense_artifacts(
                     regions.append(DefectRegion(
                         element_id=str(a.get("element_id") or ""),
                         defect_type=a.get("defect_type"), box=box))
-            if not regions:
-                continue
-            overlay = render_overlay_image(img, regions, arrays[:len(regions)])
-            saved = store.save_bytes(run_id, attempt, viewport, "overlay.png",
-                                     _png_of(overlay))
-            entries.append({**saved, "kind": "overlay", "synthetic": False})
+            if regions:
+                overlay = render_overlay_image(img, regions, arrays[:len(regions)])
+                saved = store.save_bytes(run_id, attempt, viewport, "overlay.png",
+                                         _png_of(overlay))
+                entries.append({**saved, "kind": "overlay", "synthetic": False})
+                try:
+                    flat_overlay = store.root / run_id / "overlay.png"
+                    if not flat_overlay.exists() or viewport == "mobile":
+                        flat_overlay.write_bytes(_png_of(overlay))
+                except Exception:
+                    pass
+            else:
+                from backend.core.sense import render_sam_mask_overlay
+                overlay_bytes = render_sam_mask_overlay(shot_bytes, [], anomalies=[], width=w, height=h)
+                saved = store.save_bytes(run_id, attempt, viewport, "overlay.png", overlay_bytes)
+                entries.append({**saved, "kind": "overlay", "synthetic": False})
         except Exception:
             pass
     return entries

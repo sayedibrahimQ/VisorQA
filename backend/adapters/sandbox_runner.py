@@ -42,7 +42,10 @@ _GEOMETRY_JS = """() => {
   const seen = new Set(); const out = [];
   const usedIds = new Set(Array.from(document.querySelectorAll('[data-visor-id],[data-visor-el-id]')).map((e) => e.getAttribute('data-visor-id') || e.getAttribute('data-visor-el-id')).filter(Boolean));
   let seq = 1;
-  document.querySelectorAll(sels).forEach((el, i) => {
+  const visorNodes = Array.from(document.querySelectorAll('[data-visor-id],[data-visor-el-id]'));
+  const allNodes = Array.from(document.querySelectorAll(sels));
+  const candidateNodes = visorNodes.length > 0 ? [...visorNodes, ...allNodes] : allNodes;
+  candidateNodes.forEach((el, i) => {
     if (seen.has(el)) return; seen.add(el);
     const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
     if (cs.display === 'none' || cs.visibility === 'hidden' || r.width <= 0 || r.height <= 0) return;
@@ -422,9 +425,13 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
                 body_text = (await page.inner_text("body")) if hasattr(page, "inner_text") else ""
                 if isinstance(body_text, str) and any(err in body_text for err in ("MISSING TRAFFIC ACCESS TOKEN", "403 FORBIDDEN", "403 Forbidden", "Bad Gateway")):
                     raise RuntimeError("Playwright loaded E2B missing traffic access token error screen")
+                try:
+                    await page.wait_for_selector("[data-visor-id],[data-visor-el-id]", timeout=5000)
+                except Exception:
+                    pass
                 if is_e2b_url(url):
                     try:
-                        has_visor = await page.evaluate("() => Boolean(document.querySelector('[data-visor-id]'))")
+                        has_visor = await page.evaluate("() => Boolean(document.querySelector('[data-visor-id],[data-visor-el-id]'))")
                         if has_visor is False:
                             raise RuntimeError(f"Playwright loaded page without [data-visor-id] application nodes: {url}")
                     except RuntimeError:
@@ -613,6 +620,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         self._fallback_reason = ""
         self._local_fallback: Optional[LocalWorktreeSandboxRunner] = None
         self._run_id = ""
+        self._state: Any = None
         self.hmr_latency_ms: Optional[float] = None
 
     # -- identity / telemetry ----------------------------------------------
@@ -662,7 +670,32 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
 
     # -- provisioning ---------------------------------------------------------
     async def _provision_e2b(self, state: Any = None) -> Path:
+        st = state or self._state
+        rid = self._run_id or (getattr(st, "run_id", "") if st is not None else "") or "visor-run"
         src = Path(self._source_dir or "./demo-target-app").expanduser()
+        if st is not None:
+            spec = getattr(st, "repair_spec", {}) or {}
+            repo_root = spec.get("repo_root") or spec.get("repository_root")
+            if repo_root and Path(repo_root).is_dir():
+                src = Path(repo_root)
+                self._source_dir = str(src)
+            elif (getattr(st, "repo_full_name", None) or getattr(st, "pr_url", None)):
+                try:
+                    from backend.core.worktree import hydrate_pr_workspace
+                    tok = getattr(st, "github_token", "") or os.getenv("GITHUB_TOKEN", "") or os.getenv("GITHUB_PAT", "")
+                    ws = await hydrate_pr_workspace(
+                        str(rid),
+                        getattr(st, "repo_full_name", "") or "",
+                        getattr(st, "branch", "") or "main",
+                        int(getattr(st, "pr_number", 0) or 0),
+                        tok,
+                    )
+                    if ws.get("root") and Path(ws["root"]).is_dir():
+                        src = Path(ws["root"])
+                        self._source_dir = str(src)
+                except Exception as exc:
+                    logger.warning(f"E2B hydration failed for {rid}: {exc}")
+
         if not src.is_dir() or not any(src.iterdir()):
             raise RuntimeError(f"target app source does not exist: {src}")
         network_opts = {"allow_public_traffic": True}
@@ -722,15 +755,17 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         return await self._local_fallback.ensure_workspace(state, run_id)
 
     async def ensure_workspace(self, state: Any = None, run_id: str = "") -> Path:
+        if state is not None:
+            self._state = state
         self._run_id = run_id or (getattr(state, "run_id", "") if state is not None else "") or self._run_id
         if self._e2b_active:
             return Path(self._status.working_dir)
         if self._fallback_reason:
-            return await super().ensure_workspace(state, run_id)
+            return await super().ensure_workspace(self._state or state, run_id)
         if not self._api_key:
             self._fallback_reason = "E2B_API_KEY not configured"
             logger.warning("E2B unavailable (no API key); using local worktree sandbox")
-            return await super().ensure_workspace(state, run_id)
+            return await super().ensure_workspace(self._state or state, run_id)
         try:
             return await self._provision_e2b(state)
         except Exception as exc:
@@ -739,7 +774,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             self._e2b_active = False
             self._sandbox = None
             self._sandbox_id = ""
-            return await super().ensure_workspace(state, run_id)
+            return await super().ensure_workspace(self._state or state, run_id)
 
     # -- dev server / preview --------------------------------------------------
     async def start_dev_server(self):  # type: ignore[override]
@@ -793,7 +828,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             self._fallback_reason = f"E2B dev server failed: {exc}"
             logger.warning(f"{self._fallback_reason}; falling back to local sandbox")
             await self._kill_e2b()
-            await super().ensure_workspace(None, self._run_id)
+            await super().ensure_workspace(self._state, self._run_id)
             return await super().start_dev_server()
 
     async def get_preview_url(self) -> Optional[str]:
@@ -891,7 +926,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         self._fallback_reason = self._fallback_reason or "E2B browser capture empty"
         logger.warning(f"{self._fallback_reason}; falling back to local sandbox")
         await self._kill_e2b()
-        await super().ensure_workspace(None, self._run_id)
+        await super().ensure_workspace(self._state, self._run_id)
         await super().start_dev_server()
         return await super().extract_dom_geometry(viewport_width, viewport_height)
 
@@ -909,7 +944,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         self._fallback_reason = self._fallback_reason or "E2B screenshot empty"
         logger.warning(f"{self._fallback_reason}; falling back to local sandbox")
         await self._kill_e2b()
-        await super().ensure_workspace(None, self._run_id)
+        await super().ensure_workspace(self._state, self._run_id)
         await super().start_dev_server()
         return await super().capture_screenshot(viewport_width, viewport_height)
 
