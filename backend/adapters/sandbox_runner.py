@@ -299,15 +299,8 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
     # -- dev server ---------------------------------------------------------
     def _default_dev_command(self, port: int) -> List[str]:
         workdir = self.working_dir
-        if workdir and (workdir / "index.html").is_file() and not (workdir / "package.json").is_file():
+        if workdir and (workdir / "index.html").is_file() and not (workdir / "node_modules" / "next").exists():
             return [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1", "--directory", str(workdir)]
-        if workdir and (workdir / "package.json").is_file():
-            try:
-                scripts = json.loads((workdir / "package.json").read_text(encoding="utf-8")).get("scripts", {})
-            except Exception:
-                scripts = {}
-            if "dev" in scripts:
-                return ["npm", "run", "dev", "--", "-p", str(port), "-H", "127.0.0.1"]
         return super()._default_dev_command(port)
 
     # -- real dependency install with per-lockfile cache ----------------

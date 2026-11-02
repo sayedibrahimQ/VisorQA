@@ -57,16 +57,21 @@ def get_e2b_traffic_token(sandbox: Any = None) -> Optional[str]:
 
 
 def is_e2b_url(url: Optional[str]) -> bool:
-    """Return True if ``url`` points to an E2B cloud sandbox (*.e2b.dev)."""
+    """Return True if ``url`` points to an E2B cloud sandbox (*.e2b.dev or *.e2b.app)."""
     if not url or not isinstance(url, str):
         return False
     clean = url.strip().lower()
     try:
         parsed = urlparse(clean)
         host = (parsed.hostname or "").lower()
-        return host.endswith(".e2b.dev") or ".e2b.dev" in clean
+        return (
+            host.endswith(".e2b.dev")
+            or host.endswith(".e2b.app")
+            or ".e2b.dev" in clean
+            or ".e2b.app" in clean
+        )
     except Exception:
-        return ".e2b.dev" in clean
+        return ".e2b.dev" in clean or ".e2b.app" in clean
 
 
 def get_e2b_traffic_headers(url: Optional[str], sandbox: Any = None) -> Dict[str, str]:

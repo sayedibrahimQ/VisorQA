@@ -16,11 +16,12 @@ def _resolve_name(cfg: Any, backend: Optional[str]) -> str:
     if backend:
         return str(backend).strip().lower()
     provider = str(getattr(cfg, "SANDBOX_PROVIDER", "") or "").strip().lower()
-    if provider:
-        return provider
     legacy = str(getattr(cfg, "SANDBOX_BACKEND", "") or "").strip().lower()
+    # An explicit non-default value in either spelling wins.
     if legacy and legacy != "local":
         return legacy
+    if provider:
+        return provider
     # Auto: E2B cloud when a key is configured, else local.
     if str(getattr(cfg, "E2B_API_KEY", "") or "").strip():
         return "e2b"
