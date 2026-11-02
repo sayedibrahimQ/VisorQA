@@ -350,6 +350,10 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
         else:
             await asyncio.sleep(0.05)
 
+    def get_traffic_token(self) -> Optional[str]:
+        """Traffic access token; None for local runner."""
+        return None
+
     # -- Playwright dual-viewport capture -----------------------------------
     async def _render_live(self, width: int, height: int):
         url = await self.get_preview_url()
@@ -358,11 +362,21 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
         key = (url, width, height)
         if key in self._geo_cache:
             return self._geo_cache[key]
+        from backend.core.sense import get_e2b_traffic_headers
+        headers = get_e2b_traffic_headers(url, self)
         from playwright.async_api import async_playwright
         async with async_playwright() as pw:
             browser = await launch_chromium(pw)
+            context = None
+            page = None
             try:
-                page = await browser.new_page(viewport={"width": width, "height": height})
+                context = await browser.new_context(
+                    viewport={"width": width, "height": height},
+                    extra_http_headers=headers if headers else None,
+                )
+                page = await context.new_page()
+                if headers:
+                    await page.set_extra_http_headers(headers)
                 await page.goto(url, wait_until="domcontentloaded", timeout=15000)
                 try:
                     await page.wait_for_load_state("load", timeout=5000)
@@ -386,6 +400,16 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
                     g["lca"] = hierarchy[0]["lca"] if hierarchy else None
                 shot = await page.screenshot(type="png")
             finally:
+                if page is not None:
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
+                if context is not None:
+                    try:
+                        await context.close()
+                    except Exception:
+                        pass
                 await browser.close()
         result = (geometry, shot)
         self._geo_cache[key] = result
@@ -506,6 +530,19 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         self.hmr_latency_ms: Optional[float] = None
 
     # -- identity / telemetry ----------------------------------------------
+    def get_traffic_token(self) -> Optional[str]:
+        """Return the E2B traffic access token for *.e2b.dev navigation."""
+        if self._api_key:
+            return self._api_key
+        try:
+            from backend.config import settings as _s
+            val = str(getattr(_s, "E2B_API_KEY", "") or "")
+            if val:
+                return val
+        except Exception:
+            pass
+        return os.getenv("E2B_API_KEY") or None
+
     @property
     def sandbox_id(self) -> str:
         return self._sandbox_id
@@ -601,15 +638,19 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             preview = f"https://{host}"
             # Bounded readiness poll against the public host URL.
             import httpx as _httpx
+            token = self.get_traffic_token()
+            headers = {"e2b-traffic-access-token": token} if token else {}
             deadline = time.monotonic() + 25.0
             ready = False
             while time.monotonic() < deadline:
                 try:
                     async with _httpx.AsyncClient(timeout=5.0) as client:
-                        resp = await client.get(preview)
-                        if resp.status_code < 500:
+                        resp = await client.get(preview, headers=headers)
+                        if resp.status_code == 200 or (resp.status_code < 500 and resp.status_code != 403):
                             ready = True
                             break
+                        elif resp.status_code == 403:
+                            logger.warning(f"E2B gateway returned 403 Forbidden for {preview}; traffic token invalid or missing")
                 except Exception:
                     pass
                 await asyncio.sleep(0.75)
@@ -663,11 +704,13 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
                 measured = False
                 if preview:
                     import httpx as _httpx
+                    token = self.get_traffic_token()
+                    headers = {"e2b-traffic-access-token": token} if token else {}
                     async with _httpx.AsyncClient(timeout=10.0) as client:
                         for _ in range(5):
                             try:
-                                resp = await client.get(preview)
-                                if resp.status_code < 500:
+                                resp = await client.get(preview, headers=headers)
+                                if resp.status_code < 500 and resp.status_code != 403:
                                     measured = True
                                     break
                             except Exception:
@@ -724,6 +767,12 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             viewport_width, viewport_height)
 
     async def capture_screenshot(self, viewport_width: int, viewport_height: int) -> bytes:
+        if self._local_fallback is not None and self._fallback_reason:
+            try:
+                await self._local_fallback.start_dev_server()
+            except Exception:
+                pass
+            return await self._local_fallback.capture_screenshot(viewport_width, viewport_height)
         img = await super().capture_screenshot(viewport_width, viewport_height)
         if img or not self._e2b_active:
             return img
