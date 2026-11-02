@@ -61,6 +61,7 @@ class PRRun(SQLModel, table=True):
     github_delivery_id: str = Field(default_factory=lambda: str(uuid4()), unique=True)
     repo_full_name: str = Field(index=True)
     pr_number: int = Field(index=True)
+    pr_title: Optional[str] = Field(default=None)
     branch: str = Field(default="main")
     commit_sha: str = Field(index=True)
 
@@ -221,6 +222,11 @@ async def init_db() -> None:
                     "ALTER TABLE repair_attempts ADD COLUMN IF NOT EXISTS telemetry JSONB NOT NULL DEFAULT '{}'::jsonb;"
                 )
             )
+            await conn.execute(
+                text(
+                    "ALTER TABLE pr_runs ADD COLUMN IF NOT EXISTS pr_title VARCHAR;"
+                )
+            )
 
 
 async def get_session() -> AsyncSession:
@@ -246,10 +252,14 @@ class RunRepository:
         commit_sha: str = "HEAD",
         github_delivery_id: Optional[str] = None,
         repo_id: Optional[str] = None,
+        pr_title: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> PRRun:
         run = PRRun(
+            id=run_id or str(uuid4()),
             repo_id=repo_id,
             pr_number=pr_number,
+            pr_title=pr_title,
             repo_full_name=repo_name,
             branch=branch,
             commit_sha=commit_sha,
@@ -312,6 +322,29 @@ class RunRepository:
             run.best_patch = state.best_patch
             run.is_resolved = state.is_resolved
             run.updated_at = utc_now()
+
+            # Sync attempt records
+            existing_attempt_nums = {a.attempt_number for a in run.attempts}
+            for a in getattr(state, "attempts", []):
+                if a.attempt_number not in existing_attempt_nums:
+                    attempt_rec = AttemptRecord(
+                        run_id=run.id,
+                        attempt_number=a.attempt_number,
+                        repair_spec=state.repair_spec if isinstance(state.repair_spec, dict) else {},
+                        unified_diff=a.patch_diff,
+                        mobile_v_r_min=float(a.verified_vr or 0.0),
+                        desktop_v_r_min=1.0,
+                        verified_iou=float(a.verified_iou or 0.0),
+                        verified_bleed_px=float(a.verified_bleed_px or 0.0),
+                        post_score=float(a.post_score or 0.0),
+                        hmr_latency_ms=int(getattr(getattr(state, "sandbox", None), "last_hmr_latency_ms", 50) or 50),
+                        passed=bool(a.passed),
+                        error_message=a.error_message,
+                        telemetry=getattr(a, "telemetry", {}) or {},
+                    )
+                    self.session.add(attempt_rec)
+                    existing_attempt_nums.add(a.attempt_number)
+
             self.session.add(run)
             await self.session.commit()
             await self.session.refresh(run)

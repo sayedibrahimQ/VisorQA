@@ -498,14 +498,27 @@ def build_run_payload(
     _baseline_sensed = repair_spec_state.get("baseline_sensed_elements") \
         or repair_spec_state.get("sensed_elements")
     _baseline_metrics = None
-    _evals = repair_spec_state.get("viewport_evaluations")
-    if isinstance(_evals, list):
+    _evals = repair_spec_state.get("baseline_viewport_evaluations")
+    if not _evals and int(repair_spec_state.get("viewport_metrics_attempt", 0) or 0) == 0:
+        _evals = repair_spec_state.get("viewport_evaluations")
+    if isinstance(_evals, dict):
+        _baseline_metrics = {str(k): dict(v) for k, v in _evals.items()}
+    elif isinstance(_evals, list):
         _m = [dict(e) for e in _evals if isinstance(e, dict) and int(e.get("attempt", 0) or 0) == 0]
         if _m:
             _baseline_metrics = {
                 str(e.get("viewport_name") or e.get("viewport") or ""): e
                 for e in _m if e.get("viewport_name") or e.get("viewport")}
             _baseline_metrics = _baseline_metrics or None
+    if not _baseline_metrics and by_attempt.get(0):
+        from backend.core.verify import metrics_from_anomalies
+        _derived = metrics_from_anomalies(by_attempt.get(0, []))
+        if _derived:
+            _baseline_metrics = _derived
+            if "desktop" not in _baseline_metrics:
+                _baseline_metrics["desktop"] = {"viewport": "desktop", "v_r": 1.0, "iou": 0.0, "delta_x": 0.0}
+            if "mobile" not in _baseline_metrics:
+                _baseline_metrics["mobile"] = {"viewport": "mobile", "v_r": 1.0, "iou": 0.0, "delta_x": 0.0}
     attempts_out: List[Dict[str, Any]] = []
     baseline = build_attempt_telemetry(
         attempt_number=0, anomalies=by_attempt.get(0, []), viewport_metrics=_baseline_metrics,
@@ -724,6 +737,12 @@ def capture_sense_artifacts(
             continue
         saved = store.save_bytes(run_id, attempt, viewport, f"{kind}.png", shot_bytes)
         entries.append({**saved, "kind": kind, "synthetic": False})
+        try:
+            flat_file = store.root / run_id / f"{kind}.png"
+            if not flat_file.exists() or viewport == "mobile":
+                flat_file.write_bytes(shot_bytes)
+        except Exception:
+            pass
 
         masks = cap.get("masks") or []
         arrays = []

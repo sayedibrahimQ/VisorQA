@@ -334,6 +334,10 @@ async def sense_with_playwright_and_sam(
             _evals[_name] = _eval
             _spec["viewport_evaluations"] = _evals
             _spec["viewport_metrics_attempt"] = state.attempt
+            if not resense:
+                _base_evals = dict(_spec.get("baseline_viewport_evaluations") or {})
+                _base_evals[_name] = _eval
+                _spec["baseline_viewport_evaluations"] = _base_evals
             state.repair_spec = _spec
         except Exception:
             pass

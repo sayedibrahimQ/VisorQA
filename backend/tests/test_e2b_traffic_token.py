@@ -153,3 +153,33 @@ async def test_local_worktree_default_dev_command_and_preview(tmp_path):
 
     cmd = runner._default_dev_command(3001)
     assert cmd == ["npm", "run", "dev", "--", "-p", "3001", "-H", "127.0.0.1"]
+
+
+def test_e2b_runner_extracts_traffic_access_token():
+    runner = E2BSandboxRunner(api_key="account_key")
+    runner._sandbox = MagicMock()
+    runner._sandbox.traffic_access_token = "sbx_traffic_token_123"
+
+    assert runner.get_traffic_token() == "sbx_traffic_token_123"
+    assert get_e2b_traffic_token(runner) == "sbx_traffic_token_123"
+
+
+@pytest.mark.asyncio
+async def test_render_live_rejects_403_and_gateway_error():
+    runner = LocalWorktreeSandboxRunner()
+    runner.get_preview_url = AsyncMock(return_value="https://test.e2b.dev")
+    mock_browser = MagicMock()
+    mock_context = AsyncMock()
+    mock_page = AsyncMock()
+    # Simulate Playwright loading an E2B 403 error page
+    mock_resp = MagicMock()
+    mock_resp.status = 403
+    mock_page.goto = AsyncMock(return_value=mock_resp)
+    mock_context.new_page = AsyncMock(return_value=mock_page)
+    mock_browser.new_context = AsyncMock(return_value=mock_context)
+    mock_browser.close = AsyncMock()
+
+    with patch("backend.adapters.sandbox_runner.launch_chromium", AsyncMock(return_value=mock_browser)):
+        with pytest.raises(RuntimeError, match="HTTP 403"):
+            await runner._render_live(375, 812)
+

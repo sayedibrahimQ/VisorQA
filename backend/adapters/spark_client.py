@@ -97,7 +97,14 @@ class SparkResponseError(SparkError):
 
 
 def build_triage_messages(context: Dict[str, Any]) -> List[Dict[str, str]]:
-    payload = json.dumps(context, default=str)[:16000]
+    ctx = dict(context)
+    payload = json.dumps(ctx, default=str)
+    if len(payload) > 16000:
+        if "hierarchy" in ctx and isinstance(ctx["hierarchy"], list):
+            ctx["hierarchy"] = ctx["hierarchy"][:3]
+        if "repository_files" in ctx and isinstance(ctx["repository_files"], list):
+            ctx["repository_files"] = ctx["repository_files"][:50]
+        payload = json.dumps(ctx, default=str)
     user = (
         "Localize the responsible source files for these visual "
         "defects.\n\nEvidence (anomalies, LCA DOM hierarchy, computed "
@@ -224,12 +231,13 @@ class MuseSparkTriageClient:
 
     async def triage(self, context: Dict[str, Any]) -> TriageResponse:
         messages = build_triage_messages(context)
+        logger.info("spark triage payload:\n%s", messages[1]["content"][:2000])
         attempt = 0
         while True:
             try:
                 result = await self._parse_once(messages)
-                logger.info("spark triage ok: %d target(s), status=%s",
-                            len(result.target_files), result.status)
+                logger.info("spark triage ok: %d target(s), status=%s, dump=%s",
+                            len(result.target_files), result.status, result.model_dump())
                 return result
             except (SparkResponseError, SparkConfigurationError):
                 raise  # validation/refusal/config: retrying will not help

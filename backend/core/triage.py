@@ -201,15 +201,43 @@ def detect_intentional_overlaps(
 def build_triage_context(state: AgentState) -> Dict[str, Any]:
     """Bounded model context: defects, LCA hierarchy, CSS, file tree."""
     spec = state.repair_spec if isinstance(state.repair_spec, dict) else {}
-    hierarchy = spec.get("hierarchy") or spec.get("lca_records") or []
+    raw_hierarchy = spec.get("hierarchy") or spec.get("lca_records") or []
+
+    # Prioritize hierarchy records relevant to anomalies
+    anomaly_ids = {a.element_id for a in state.anomalies if a.element_id}
+    for a in state.anomalies:
+        sec = getattr(a, "secondary_el_id", None)
+        if sec:
+            anomaly_ids.add(sec)
+
+    relevant_hierarchy: List[Any] = []
+    other_hierarchy: List[Any] = []
+    for rec in raw_hierarchy:
+        rec_ids = set()
+        if isinstance(rec, dict):
+            rec_ids.update(rec.get("element_ids") or [])
+            elem = rec.get("element") or {}
+            if isinstance(elem, dict) and elem.get("data-visor-el-id"):
+                rec_ids.add(elem["data-visor-el-id"])
+            sib = rec.get("sibling") or {}
+            if isinstance(sib, dict) and sib.get("data-visor-el-id"):
+                rec_ids.add(sib["data-visor-el-id"])
+        if rec_ids & anomaly_ids:
+            relevant_hierarchy.append(rec)
+        else:
+            other_hierarchy.append(rec)
+
+    # Keep at most 6 hierarchy records to prevent payload blowup
+    selected_hierarchy = (relevant_hierarchy + other_hierarchy)[:6]
+
     context: Dict[str, Any] = {
+        "repository_files": extract_file_tree(spec),
         "anomalies": [a.model_dump(mode="json") for a in state.anomalies],
         "lca_dom": spec.get("lca_dom", {}),
         "lca_element_id": spec.get("lca_element_id"),
-        "hierarchy": hierarchy,
+        "hierarchy": selected_hierarchy,
         "computed_styles": spec.get("computed_styles")
         or spec.get("computed_css") or {},
-        "repository_files": extract_file_tree(spec),
         "existing_target_files": list(state.target_files),
         "viewport_diagnostics": {
             k: spec[k] for k in ("viewport_evaluations", "overlays",
@@ -220,8 +248,8 @@ def build_triage_context(state: AgentState) -> Dict[str, Any]:
     # Bound the serialized context; the file tree is the bulkiest part.
     text = json.dumps(context, default=str)
     if len(text) > _MAX_CONTEXT_CHARS:
-        context["repository_files"] = context["repository_files"][:200]
-        context["hierarchy"] = context["hierarchy"][:20]
+        context["repository_files"] = context["repository_files"][:100]
+        context["hierarchy"] = context["hierarchy"][:3]
         context["context_truncated"] = True
     return context
 
