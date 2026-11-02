@@ -23,9 +23,11 @@ def get_e2b_traffic_token(sandbox: Any = None) -> Optional[str]:
 
     Checks:
     1. sandbox.get_traffic_token()
-    2. sandbox._api_key
-    3. os.environ["E2B_API_KEY"]
-    4. settings.E2B_API_KEY
+    2. sandbox.traffic_access_token / trafficAccessToken / _traffic_access_token
+    3. sandbox._sandbox traffic token
+    4. sandbox._api_key
+    5. os.environ["E2B_API_KEY"]
+    6. settings.E2B_API_KEY
     """
     token: Optional[str] = None
     if sandbox is not None:
@@ -35,6 +37,20 @@ def get_e2b_traffic_token(sandbox: Any = None) -> Optional[str]:
                 token = fn()
             except Exception:
                 token = None
+        if not token:
+            token = (
+                getattr(sandbox, "traffic_access_token", None)
+                or getattr(sandbox, "trafficAccessToken", None)
+                or getattr(sandbox, "_traffic_access_token", None)
+            )
+        if not token and hasattr(sandbox, "_sandbox"):
+            inner = getattr(sandbox, "_sandbox", None)
+            if inner is not None:
+                token = (
+                    getattr(inner, "traffic_access_token", None)
+                    or getattr(inner, "trafficAccessToken", None)
+                    or getattr(inner, "_traffic_access_token", None)
+                )
         if not token:
             raw_key = getattr(sandbox, "_api_key", None)
             if raw_key:

@@ -79,9 +79,9 @@ _GEOMETRY_JS = """() => {
       bounding_box: {x: r.x, y: r.y, width: r.width, height: r.height},
       b_dom_box: {x: r.x, y: r.y, width: r.width, height: r.height},
       c_x: r.x + r.width/2, c_y: r.y + r.height/2,
-      computed_css: {position: cs.position, zIndex: cs.zIndex, overflow: cs.overflow,
+      computed_css: {position: cs.position, zIndex: cs.zIndex, 'z-index': cs.zIndex, overflow: cs.overflow,
         display: cs.display, flexWrap: cs.flexWrap, visibility: cs.visibility},
-      computed_styles: {position: cs.position, zIndex: cs.zIndex, overflow: cs.overflow,
+      computed_styles: {position: cs.position, zIndex: cs.zIndex, 'z-index': cs.zIndex, overflow: cs.overflow,
         display: cs.display, flexWrap: cs.flexWrap, visibility: cs.visibility}});
   });
   return out.slice(0, 40);
@@ -300,7 +300,7 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
     def _default_dev_command(self, port: int) -> List[str]:
         workdir = self.working_dir
         if workdir and (workdir / "index.html").is_file() and not (workdir / "node_modules" / "next").exists():
-            return [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1", "--directory", str(workdir)]
+            return [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1", "--directory", str(Path(workdir).resolve())]
         return super()._default_dev_command(port)
 
     # -- real dependency install with per-lockfile cache ----------------
@@ -392,7 +392,7 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
         key = (url, width, height)
         if key in self._geo_cache:
             return self._geo_cache[key]
-        from backend.core.sense import get_e2b_traffic_headers
+        from backend.core.sense import get_e2b_traffic_headers, is_e2b_url
         headers = get_e2b_traffic_headers(url, self)
         from playwright.async_api import async_playwright
         async with async_playwright() as pw:
@@ -407,27 +407,83 @@ class LocalWorktreeSandboxRunner(LocalSandboxRunner):
                 page = await context.new_page()
                 if headers:
                     await page.set_extra_http_headers(headers)
-                await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                resp = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                if resp is not None:
+                    status = getattr(resp, "status", None)
+                    if isinstance(status, int) and (status != 200 or status in (403, 404, 502)):
+                        raise RuntimeError(f"Playwright navigation received HTTP {status} for {url}")
                 try:
                     await page.wait_for_load_state("load", timeout=5000)
                 except Exception:
                     pass
+                title = (await page.title()) if hasattr(page, "title") else ""
+                if isinstance(title, str) and any(err in title for err in ("403 Forbidden", "502 Bad Gateway", "Forbidden")):
+                    raise RuntimeError(f"Playwright loaded gateway error page: title={title!r}")
+                body_text = (await page.inner_text("body")) if hasattr(page, "inner_text") else ""
+                if isinstance(body_text, str) and any(err in body_text for err in ("MISSING TRAFFIC ACCESS TOKEN", "403 FORBIDDEN", "403 Forbidden", "Bad Gateway")):
+                    raise RuntimeError("Playwright loaded E2B missing traffic access token error screen")
+                if is_e2b_url(url):
+                    try:
+                        has_visor = await page.evaluate("() => Boolean(document.querySelector('[data-visor-id]'))")
+                        if has_visor is False:
+                            raise RuntimeError(f"Playwright loaded page without [data-visor-id] application nodes: {url}")
+                    except RuntimeError:
+                        raise
+                    except Exception:
+                        pass
                 geometry = await page.evaluate(_GEOMETRY_JS)
-                # LCA for first two elements (hierarchy summary)
+                # Full LCA DOM hierarchy extraction with descriptors, ancestor chains, and CSS signatures
                 try:
-                    hierarchy = await page.evaluate("""(ids) => {
-                      const els = ids.map(id => document.querySelector('[data-visor-el-id="'+id+'"]'));
-                      function anc(el){ const o=[]; let c=el; while(c && c!==document.body){o.push(c.tagName.toLowerCase()); c=c.parentElement;} return o; }
-                      if (els.length < 2 || !els[0] || !els[1]) return [];
-                      const a = anc(els[0]), b = anc(els[1]);
-                      const lca = a.find(x => b.includes(x)) || 'body';
-                      return [{relationship:'selected_pair', element_ids: ids.slice(0,2), lca:{tag:lca}, lca_found:true, lca_status:'found'}];
-                    }""", [g["element_id"] for g in geometry])
-                except Exception:
+                    from backend.browser.renderer import extract_hierarchy
+                    all_ids = [
+                        str(g.get("element_id") or g.get("visor_el_id") or "")
+                        for g in geometry
+                        if (g.get("element_id") or g.get("visor_el_id"))
+                    ]
+                    tagged_ids = [
+                        str(g.get("element_id") or g.get("visor_el_id") or "")
+                        for g in geometry
+                        if g.get("visor_tagged") and (g.get("element_id") or g.get("visor_el_id"))
+                    ]
+                    if not tagged_ids:
+                        tagged_ids = all_ids[:8]
+                    pairs: List[List[str]] = []
+                    pair_set = set()
+                    for i in range(len(tagged_ids)):
+                        for j in range(i + 1, len(tagged_ids)):
+                            p = (tagged_ids[i], tagged_ids[j])
+                            if p not in pair_set:
+                                pair_set.add(p)
+                                pairs.append([p[0], p[1]])
+                    for i in range(len(all_ids) - 1):
+                        p = (all_ids[i], all_ids[i + 1])
+                        if p not in pair_set:
+                            pair_set.add(p)
+                            pairs.append([p[0], p[1]])
+
+                    hierarchy_records = await extract_hierarchy(
+                        page,
+                        ids=all_ids,
+                        pairs=pairs[:30],
+                        max_ancestor_depth=8,
+                        viewport_name=f"{width}x{height}",
+                    )
+                    hierarchy = [h.model_dump(mode="json", by_alias=True) for h in hierarchy_records]
+                except Exception as exc:
+                    logger.warning(f"Hierarchy extraction fallback: {exc}")
                     hierarchy = []
+
+                lca_desc = None
+                for rec in hierarchy:
+                    if rec.get("relationship") in ("selected_pair", "adjacent_sibling_pair") and rec.get("lca_found") and rec.get("lca"):
+                        lca_desc = rec["lca"]
+                        break
+                if not lca_desc and hierarchy:
+                    lca_desc = hierarchy[0].get("lca")
+
                 for g in geometry:
                     g["hierarchy"] = hierarchy
-                    g["lca"] = hierarchy[0]["lca"] if hierarchy else None
+                    g["lca"] = lca_desc
                 shot = await page.screenshot(type="png")
             finally:
                 if page is not None:
@@ -562,6 +618,14 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
     # -- identity / telemetry ----------------------------------------------
     def get_traffic_token(self) -> Optional[str]:
         """Return the E2B traffic access token for *.e2b.dev navigation."""
+        if self._sandbox is not None:
+            token = (
+                getattr(self._sandbox, "traffic_access_token", None)
+                or getattr(self._sandbox, "trafficAccessToken", None)
+                or getattr(self._sandbox, "_traffic_access_token", None)
+            )
+            if token:
+                return str(token).strip()
         if self._api_key:
             return self._api_key
         try:
@@ -601,14 +665,35 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         src = Path(self._source_dir or "./demo-target-app").expanduser()
         if not src.is_dir() or not any(src.iterdir()):
             raise RuntimeError(f"target app source does not exist: {src}")
+        network_opts = {"allow_public_traffic": True}
         try:
             from e2b import Sandbox
-            self._sandbox = await asyncio.to_thread(
-                Sandbox.create, timeout=self._sandbox_timeout, api_key=self._api_key)
+            try:
+                self._sandbox = await asyncio.to_thread(
+                    Sandbox.create,
+                    timeout=self._sandbox_timeout,
+                    api_key=self._api_key,
+                    network=network_opts,
+                )
+            except (TypeError, Exception):
+                self._sandbox = await asyncio.to_thread(
+                    Sandbox.create,
+                    timeout=self._sandbox_timeout,
+                    api_key=self._api_key,
+                )
         except Exception:
             from e2b import AsyncSandbox
-            self._sandbox = await AsyncSandbox.create(
-                timeout=self._sandbox_timeout, api_key=self._api_key)
+            try:
+                self._sandbox = await AsyncSandbox.create(
+                    timeout=self._sandbox_timeout,
+                    api_key=self._api_key,
+                    network=network_opts,
+                )
+            except (TypeError, Exception):
+                self._sandbox = await AsyncSandbox.create(
+                    timeout=self._sandbox_timeout,
+                    api_key=self._api_key,
+                )
         self._sandbox_id = str(getattr(self._sandbox, "sandbox_id", "") or "")
         # Upload the workspace (bounded; frontend/test files are small).
         uploaded = 0
@@ -640,6 +725,8 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
         self._run_id = run_id or (getattr(state, "run_id", "") if state is not None else "") or self._run_id
         if self._e2b_active:
             return Path(self._status.working_dir)
+        if self._fallback_reason:
+            return await super().ensure_workspace(state, run_id)
         if not self._api_key:
             self._fallback_reason = "E2B_API_KEY not configured"
             logger.warning("E2B unavailable (no API key); using local worktree sandbox")
@@ -660,10 +747,14 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             return await super().start_dev_server()
         port = int(self._target_app_port or 3001)
         try:
-            await _e2b_run_cmd(
-                self._sandbox,
-                f"python3 -m http.server {port} --bind 0.0.0.0 --directory {self.REMOTE_ROOT}",
-                background=True, timeout=30)
+            workdir = Path(self._status.working_dir or self._source_dir or "./demo-target-app")
+            has_next = (workdir / "package.json").is_file()
+            if has_next:
+                dev_cmd = f"cd {self.REMOTE_ROOT} && HOSTNAME=0.0.0.0 PORT={port} npm run dev -- -H 0.0.0.0 -p {port}"
+            else:
+                dev_cmd = f"python3 -m http.server {port} --bind 0.0.0.0 --directory {self.REMOTE_ROOT}"
+
+            await _e2b_run_cmd(self._sandbox, dev_cmd, background=True, timeout=30)
             host = self._sandbox.get_host(port)
             preview = f"https://{host}"
             # Bounded readiness poll against the public host URL.
@@ -672,20 +763,28 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             headers = {"e2b-traffic-access-token": token} if token else {}
             deadline = time.monotonic() + 25.0
             ready = False
+            last_status = None
+            last_text = ""
             while time.monotonic() < deadline:
                 try:
                     async with _httpx.AsyncClient(timeout=5.0) as client:
                         resp = await client.get(preview, headers=headers)
-                        if resp.status_code == 200 or (resp.status_code < 500 and resp.status_code != 403):
-                            ready = True
-                            break
-                        elif resp.status_code == 403:
-                            logger.warning(f"E2B gateway returned 403 Forbidden for {preview}; traffic token invalid or missing")
-                except Exception:
-                    pass
+                        last_status = resp.status_code
+                        last_text = resp.text[:400]
+                        # ONLY accept strict 200 OK without gateway error body text
+                        if resp.status_code == 200:
+                            if not any(err in resp.text for err in ("MISSING TRAFFIC ACCESS TOKEN", "403 Forbidden", "403 FORBIDDEN", "Bad Gateway")):
+                                ready = True
+                                break
+                            else:
+                                logger.warning(f"E2B preview returned 200 with gateway error body: {last_text}")
+                        elif resp.status_code in (403, 404, 502):
+                            logger.warning(f"E2B gateway returned HTTP {resp.status_code} for {preview} (retrying)")
+                except Exception as poll_err:
+                    last_text = str(poll_err)
                 await asyncio.sleep(0.75)
             if not ready:
-                raise RuntimeError("E2B preview host did not become ready")
+                raise RuntimeError(f"E2B preview host did not become ready (status: {last_status}, body: {last_text[:120]})")
             self._status.preview_url = preview
             self._status.server_state = ServerState.RUNNING
             self._mark_status()
@@ -694,6 +793,7 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             self._fallback_reason = f"E2B dev server failed: {exc}"
             logger.warning(f"{self._fallback_reason}; falling back to local sandbox")
             await self._kill_e2b()
+            await super().ensure_workspace(None, self._run_id)
             return await super().start_dev_server()
 
     async def get_preview_url(self) -> Optional[str]:
@@ -778,45 +878,44 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
 
     # -- capture with fallback ---------------------------------------------------
     async def extract_dom_geometry(self, viewport_width: int, viewport_height: int):
-        geometry = await super().extract_dom_geometry(viewport_width, viewport_height)
-        if geometry or not self._e2b_active:
-            return geometry
-        logger.warning("E2B browser capture returned no geometry; "
-                       "falling back to local sandbox capture")
-        self._fallback_reason = "E2B browser capture empty"
-        if self._local_fallback is None:
-            await self._fallback_local(None, self._run_id)
-        assert self._local_fallback is not None
-        # The fallback workspace has no server yet: boot the real target
-        # app (deps install + dev server) before capturing from it.
+        if not self._e2b_active:
+            return await super().extract_dom_geometry(viewport_width, viewport_height)
         try:
-            await self._local_fallback.start_dev_server()
-        except Exception:
-            pass
-        return await self._local_fallback.extract_dom_geometry(
-            viewport_width, viewport_height)
+            geometry = await super().extract_dom_geometry(viewport_width, viewport_height)
+            if geometry:
+                return geometry
+        except Exception as exc:
+            logger.warning(f"E2B extract_dom_geometry error ({exc})")
+            self._fallback_reason = f"E2B capture failed: {exc}"
+
+        self._fallback_reason = self._fallback_reason or "E2B browser capture empty"
+        logger.warning(f"{self._fallback_reason}; falling back to local sandbox")
+        await self._kill_e2b()
+        await super().ensure_workspace(None, self._run_id)
+        await super().start_dev_server()
+        return await super().extract_dom_geometry(viewport_width, viewport_height)
 
     async def capture_screenshot(self, viewport_width: int, viewport_height: int) -> bytes:
-        if self._local_fallback is not None and self._fallback_reason:
-            try:
-                await self._local_fallback.start_dev_server()
-            except Exception:
-                pass
-            return await self._local_fallback.capture_screenshot(viewport_width, viewport_height)
-        img = await super().capture_screenshot(viewport_width, viewport_height)
-        if img or not self._e2b_active:
-            return img
-        if self._local_fallback is None:
-            await self._fallback_local(None, self._run_id)
-        assert self._local_fallback is not None
+        if not self._e2b_active:
+            return await super().capture_screenshot(viewport_width, viewport_height)
         try:
-            await self._local_fallback.start_dev_server()
-        except Exception:
-            pass
-        return await self._local_fallback.capture_screenshot(viewport_width, viewport_height)
+            img = await super().capture_screenshot(viewport_width, viewport_height)
+            if img:
+                return img
+        except Exception as exc:
+            logger.warning(f"E2B capture_screenshot error ({exc})")
+            self._fallback_reason = f"E2B screenshot failed: {exc}"
+
+        self._fallback_reason = self._fallback_reason or "E2B screenshot empty"
+        logger.warning(f"{self._fallback_reason}; falling back to local sandbox")
+        await self._kill_e2b()
+        await super().ensure_workspace(None, self._run_id)
+        await super().start_dev_server()
+        return await super().capture_screenshot(viewport_width, viewport_height)
 
     # -- lifecycle -----------------------------------------------------------------
     async def _kill_e2b(self) -> None:
+        self._geo_cache.clear()
         if self._sandbox is not None:
             try:
                 await _e2b_kill(self._sandbox)
@@ -825,6 +924,10 @@ class E2BSandboxRunner(LocalWorktreeSandboxRunner):
             self._sandbox = None
         self._e2b_active = False
         self._sandbox_id = ""
+        self._status.preview_url = None
+        self._status.working_dir = ""
+        self._proc = None
+        self._port = None
 
     async def terminate(self) -> None:
         try:
