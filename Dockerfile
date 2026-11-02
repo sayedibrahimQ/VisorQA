@@ -8,12 +8,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies (git for worktrees/clones, curl for healthchecks)
+# Install system dependencies (git for worktrees/clones, curl for healthchecks, nodejs/npm for sandbox)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     git \
     libpq-dev \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend requirements and install Python dependencies
