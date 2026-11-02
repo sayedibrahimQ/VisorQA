@@ -35,7 +35,6 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from backend.config import settings
 from backend.core.sense import (
-    E2B_TRAFFIC_HEADER,
     get_e2b_traffic_headers,
     get_e2b_traffic_token,
     is_e2b_url,
