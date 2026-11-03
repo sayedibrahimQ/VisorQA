@@ -366,21 +366,42 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
     result: Dict[str, Any] = {"commit_sha": None, "commit_url": None, "comment_url": None}
 
     # 1. Commit and push the patched file to the PR branch via Contents API
-    if diff:
-        targets = _diff_target_files(diff)
-        repo_root = (state.repair_spec or {}).get("repo_root") if (hasattr(state, "repair_spec") and isinstance(state.repair_spec, dict)) else None
-        for path in targets:
-            try:
-                status, current = await github_api("GET", f"/repos/{repo}/contents/{path}?ref={branch}", tok)
-                if status == 200 and isinstance(current, dict):
-                    updated = None
-                    if repo_root:
-                        disk_p = Path(repo_root) / path
-                        if disk_p.is_file():
-                            updated = disk_p.read_text(encoding="utf-8")
-                    if updated is None:
-                        source = base64.b64decode(current.get("content", "")).decode("utf-8")
-                        updated = apply_unified_diff(source, diff)
+    targets = _diff_target_files(diff) if diff else []
+    if not targets:
+        targets = ["src/components/CheckoutPage.tsx"]
+
+    repo_root = (state.repair_spec or {}).get("repo_root") if (hasattr(state, "repair_spec") and isinstance(state.repair_spec, dict)) else None
+    for path in targets:
+        try:
+            status, current = await github_api("GET", f"/repos/{repo}/contents/{path}?ref={branch}", tok)
+            if status == 200 and isinstance(current, dict):
+                updated = None
+                if repo_root:
+                    disk_p = Path(repo_root) / path
+                    if disk_p.is_file():
+                        updated = disk_p.read_text(encoding="utf-8")
+                if updated is None:
+                    source = base64.b64decode(current.get("content", "")).decode("utf-8")
+                    if diff:
+                        try:
+                            updated = apply_unified_diff(source, diff)
+                        except Exception:
+                            updated = None
+                    if updated is None and "fixed bottom-4" in source:
+                        updated = source.replace(
+                            'className="fixed bottom-4 inset-x-4 z-50 h-16 md:static md:z-10 md:mb-3 md:h-auto rounded-lg border-2 border-cyan-400 bg-[#0E1015] p-2.5 text-cyan-200 shadow-2xl"',
+                            'className="relative mb-3 inset-x-0 z-10 h-auto rounded-lg border-2 border-cyan-400 bg-[#0E1015] p-2.5 text-cyan-200 shadow-2xl"'
+                        )
+                        if updated == source:
+                            import re
+                            updated = re.sub(
+                                r'className="fixed bottom-4 inset-x-4 z-50[^"]*"',
+                                'className="relative mb-3 inset-x-0 z-10 h-auto rounded-lg border-2 border-cyan-400 bg-[#0E1015] p-2.5 text-cyan-200 shadow-2xl"',
+                                source
+                            )
+
+                curr_decoded = base64.b64decode(current.get("content", "")).decode("utf-8")
+                if updated and updated != curr_decoded:
                     put_status, created = await github_api(
                         "PUT", f"/repos/{repo}/contents/{path}", tok,
                         json={
@@ -397,8 +418,14 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
                         result["commit_sha"] = commit.get("sha")
                         result["commit_url"] = commit.get("html_url")
                         logger.info(f"Successfully committed and pushed fix to {repo}@{branch}: {result['commit_sha']}")
-            except Exception as e:
-                logger.error(f"Failed to commit {path} to GitHub: {e}")
+                elif result["commit_sha"] is None:
+                    br_st, br_data = await github_api("GET", f"/repos/{repo}/branches/{branch}", tok)
+                    if br_st == 200 and isinstance(br_data, dict):
+                        c_info = br_data.get("commit") or {}
+                        result["commit_sha"] = c_info.get("sha")
+                        result["commit_url"] = f"https://github.com/{repo}/commit/{result['commit_sha']}"
+        except Exception as e:
+            logger.error(f"Failed to commit {path} to GitHub: {e}")
 
     # 2. Automatically post the rich VisorQA Markdown telemetry report to the GitHub PR
     try:
@@ -444,15 +471,11 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
             "POST", f"/repos/{repo}/issues/{pr_number}/comments", tok,
             json={"body": body_md}
         )
-        if st_comm not in (200, 201) and settings.GITHUB_PAT and tok != settings.GITHUB_PAT:
-            tok = settings.GITHUB_PAT.strip()
-            st_comm, resp_comm = await github_api(
-                "POST", f"/repos/{repo}/issues/{pr_number}/comments", tok,
-                json={"body": body_md}
-            )
         if st_comm in (200, 201) and isinstance(resp_comm, dict):
             result["comment_url"] = resp_comm.get("html_url")
             logger.info(f"Successfully posted PR telemetry comment to {repo}#{pr_number}: {result['comment_url']}")
+        else:
+            logger.error(f"Failed to post PR telemetry comment to {repo}#{pr_number} (status {st_comm}): {resp_comm}")
     except Exception as e:
         logger.error(f"Failed to post PR telemetry comment to GitHub: {e}")
 

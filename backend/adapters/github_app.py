@@ -42,7 +42,7 @@ def _clean_pem(pem_str: Optional[str]) -> str:
     if not pem_str:
         return ""
     val = pem_str.strip().strip("'\"")
-    if "\\n" in val:
+    while "\\n" in val:
         val = val.replace("\\n", "\n")
     return val.strip()
 
@@ -71,7 +71,7 @@ class GitHubAppAuth:
         if app_id is not None:
             self.app_id = str(app_id).strip()
         else:
-            self.app_id = str(os.getenv("GITHUB_APP_ID") or getattr(settings, "GITHUB_APP_ID", "") or "").strip()
+            self.app_id = str(os.getenv("GITHUB_APP_ID") or getattr(settings, "GITHUB_APP_ID", "") or "5538390").strip()
 
         if private_key is not None:
             self._private_key_inline = _clean_pem(str(private_key))
@@ -91,7 +91,7 @@ class GitHubAppAuth:
             self._private_key_path = str(
                 os.getenv("GITHUB_PRIVATE_KEY_PATH")
                 or getattr(settings, "GITHUB_PRIVATE_KEY_PATH", "")
-                or ""
+                or "./github-app-private-key.pem"
             ).strip()
 
         self.default_installation_id = (
@@ -99,6 +99,7 @@ class GitHubAppAuth:
             if default_installation_id is not None
             else getattr(settings, "GITHUB_INSTALLATION_ID", None)
             or os.getenv("GITHUB_INSTALLATION_ID")
+            or "176815258"
         )
 
         # Cache: installation_id -> (token_str, expires_at_timestamp)
@@ -370,7 +371,7 @@ async def resolve_repo_token_and_author(
 
     Returns:
         (token, author_dict)
-        author_dict: {"name": "visorqa[bot]", "email": f"{app_id}+visorqa[bot]@users.noreply.github.com"}
+        author_dict: {"name": "visorqa-agent[bot]", "email": f"{app_id}+visorqa-agent[bot]@users.noreply.github.com"}
     """
     app_id = (
         os.getenv("GITHUB_APP_ID")
@@ -378,26 +379,26 @@ async def resolve_repo_token_and_author(
         or "5538390"
     ).strip()
     author = {
-        "name": "visorqa[bot]",
-        "email": f"{app_id}+visorqa[bot]@users.noreply.github.com",
+        "name": "visorqa-agent[bot]",
+        "email": f"{app_id}+visorqa-agent[bot]@users.noreply.github.com",
     }
 
-    # 1. Primary: GitHub App Installation Token for the repository
+    # 1. Primary: ALWAYS attempt GitHub App Installation Token for the repository FIRST
     try:
         if github_app_auth.is_configured():
             if repo:
                 token = await github_app_auth.get_installation_token_for_repo(repo)
             else:
                 token = await github_app_auth.get_installation_token()
-            if token:
-                return token, author
+            if token and str(token).startswith("ghs_"):
+                return str(token).strip(), author
     except Exception as exc:
-        logger.info(
-            f"GitHub App token resolution for '{repo}' failed or not installed: {exc}; "
+        logger.warning(
+            f"GitHub App token resolution for '{repo}' failed: {exc}; "
             "falling back to PAT/OAuth token."
         )
 
-    # 2. Safe Fallback: user/session token or GITHUB_PAT
+    # 2. Safe Fallback ONLY if GitHub App token cannot be minted
     tok = (fallback_token or settings.GITHUB_PAT or os.getenv("GITHUB_PAT", "") or os.getenv("GITHUB_TOKEN", "") or "").strip()
     return tok, author
 
