@@ -8,6 +8,7 @@ are ever returned to the browser beyond the session cookie.
 """
 from __future__ import annotations
 
+import os
 import secrets as _secrets
 from typing import Any, Dict, Optional, Tuple
 
@@ -65,28 +66,34 @@ async def fetch_github_user(token: str,
     }
 
 
-async def app_installation_token() -> Optional[str]:
+async def app_installation_token(repo: Optional[str] = None) -> Optional[str]:
     """Installation token from the configured GitHub App, when usable."""
     try:
-        from backend.adapters.github_app import GitHubAppAuth
-        auth = GitHubAppAuth()
-        if not auth.is_configured():
+        from backend.adapters.github_app import github_app_auth
+        if not github_app_auth.is_configured():
             return None
-        return await auth.get_installation_token()
+        if repo:
+            return await github_app_auth.get_installation_token_for_repo(repo)
+        return await github_app_auth.get_installation_token()
     except Exception:
         return None
 
 
-async def resolve_github_token(request: Optional[Request]) -> Optional[Tuple[str, str]]:
-    """(token, auth_mode) for GitHub API calls: session -> App -> env PAT."""
+async def resolve_github_token(request: Optional[Request], repo: Optional[str] = None) -> Optional[Tuple[str, str]]:
+    """(token, auth_mode) for GitHub API calls: GitHub App -> session -> env PAT."""
+    # 1. Primary: GitHub App installation token
+    token = await app_installation_token(repo=repo)
+    if token:
+        return token, "github_app"
+
+    # 2. User session cookie
     if request is not None:
         session = current_session(request)
         if session:
             return session["token"], session["auth_mode"]
-    token = await app_installation_token()
-    if token:
-        return token, "github_app"
-    pat = (settings.GITHUB_PAT or "").strip()
+
+    # 3. Fallback: env PAT
+    pat = (settings.GITHUB_PAT or os.getenv("GITHUB_PAT", "") or os.getenv("GITHUB_TOKEN", "") or "").strip()
     if pat:
         return pat, "pat"
     return None
