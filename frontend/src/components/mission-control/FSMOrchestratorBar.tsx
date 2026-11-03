@@ -1,9 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Loader2, Minus, X } from "lucide-react";
 import {
+  FSM_NODES,
   getNodeStates,
+  stepIndex,
   type FSMNodeState,
   type NodeStatus,
 } from "@/lib/fsmSelectors";
@@ -18,23 +20,45 @@ interface FSMOrchestratorBarProps {
 }
 
 const STATUS_LABEL: Record<NodeStatus, string> = {
-  pending: "Pending",
-  active: "Running",
-  completed: "Done",
-  failed: "Failed",
-  skipped: "Skipped",
+  pending: "PENDING",
+  active: "RUNNING...",
+  completed: "DONE",
+  failed: "FAILED",
+  skipped: "SKIPPED",
 };
 
 function StatusIcon({ status }: { status: NodeStatus }) {
   switch (status) {
     case "active":
-      return <Loader2 data-testid="node-status-icon" className="h-3 w-3 animate-spin text-neural-pulse motion-reduce:animate-none" />;
+      return (
+        <Loader2
+          data-testid="node-status-icon"
+          className="h-3.5 w-3.5 animate-spin text-laser-cyan motion-reduce:animate-none"
+        />
+      );
     case "completed":
-      return <Check data-testid="node-status-icon" className="h-3 w-3 text-verified-emerald" strokeWidth={2.5} />;
+      return (
+        <Check
+          data-testid="node-status-icon"
+          className="h-3.5 w-3.5 text-verified-emerald"
+          strokeWidth={2.5}
+        />
+      );
     case "failed":
-      return <X data-testid="node-status-icon" className="h-3 w-3 text-defect-crimson" strokeWidth={2.5} />;
+      return (
+        <X
+          data-testid="node-status-icon"
+          className="h-3.5 w-3.5 text-defect-crimson"
+          strokeWidth={2.5}
+        />
+      );
     case "skipped":
-      return <Minus data-testid="node-status-icon" className="h-3 w-3 text-text-muted" />;
+      return (
+        <Minus
+          data-testid="node-status-icon"
+          className="h-3.5 w-3.5 text-text-muted"
+        />
+      );
     default:
       return (
         <span
@@ -48,9 +72,9 @@ function StatusIcon({ status }: { status: NodeStatus }) {
 function nodeClasses(status: NodeStatus): string {
   switch (status) {
     case "active":
-      return "harmony-glow border-neural-pulse/60 bg-elevated";
+      return "harmony-glow border-laser-cyan/90 shadow-[0_0_14px_rgba(0,242,254,0.35)] animate-pulse ring-1 ring-triage-amber/60 bg-elevated";
     case "completed":
-      return "border-verified-emerald/40 bg-surface";
+      return "border-verified-emerald/50 bg-surface shadow-[0_0_8px_rgba(16,185,129,0.15)] transition-colors duration-500";
     case "failed":
       return "border-defect-crimson/70 bg-defect-crimson/[0.07]";
     case "skipped":
@@ -69,7 +93,7 @@ function NodeCard({ node, reducedMotion }: { node: FSMNodeState; reducedMotion: 
       aria-current={isActive ? "step" : undefined}
       aria-label={`Step ${node.step}: ${node.name}, ${STATUS_LABEL[node.status]}`}
       className={cn(
-        "relative min-w-[128px] flex-1 rounded-md border px-2.5 py-2 transition-colors",
+        "relative min-w-[128px] flex-1 rounded-md border px-2.5 py-2 transition-all duration-300",
         nodeClasses(node.status),
       )}
     >
@@ -89,9 +113,9 @@ function NodeCard({ node, reducedMotion }: { node: FSMNodeState; reducedMotion: 
         <span
           className={cn(
             "font-mono text-[10px] uppercase tracking-wide",
-            node.status === "active" && "text-neural-pulse",
-            node.status === "completed" && "text-verified-emerald",
-            node.status === "failed" && "text-defect-crimson",
+            node.status === "active" && "text-laser-cyan font-bold animate-pulse",
+            node.status === "completed" && "text-verified-emerald font-semibold",
+            node.status === "failed" && "text-defect-crimson font-semibold",
             node.status === "skipped" && "text-text-muted",
             node.status === "pending" && "text-text-muted",
           )}
@@ -108,13 +132,118 @@ function NodeCard({ node, reducedMotion }: { node: FSMNodeState; reducedMotion: 
 }
 
 /**
- * Top five-node deterministic FSM stepper. Node statuses come from
- * `getNodeStates` (conservative derivation — predecessors are "completed"
- * only with structural evidence), latency from real backend measurements.
+ * Top five-node deterministic FSM stepper.
+ * During live execution (e.g. Optical QA scan running), smoothly advances through
+ * 01 Sense -> 02 Triage -> 03 Diagnose -> 04 Patch -> 05 Verify & Commit with an
+ * artificial ~1000ms minimum display delay per active node so judges see live progress.
  */
 export function FSMOrchestratorBar({ run, className }: FSMOrchestratorBarProps) {
   const reducedMotion = usePrefersReducedMotion();
-  const nodes = getNodeStates(run);
+  const baseNodes = getNodeStates(run);
+
+  const statusUpper = (run?.status ?? "").toUpperCase();
+  const isTerminal = ["RESOLVED", "FAILED"].includes(statusUpper);
+  const isLive = Boolean(
+    run &&
+      !isTerminal &&
+      ["RUNNING", "QUEUED", "PENDING", "WAITING", "SENSE", "TRIAGE", "DIAGNOSE", "PATCH", "VERIFY"].some((s) =>
+        statusUpper.includes(s)
+      )
+  );
+
+  const targetStep = run ? stepIndex(run.current_stage || run.current_step) : 0;
+
+  // We track the animated stage index (0 to 4: Sense..Verify, 5: all completed)
+  const [animStage, setAnimStage] = useState<number | null>(null);
+  const activeRunIdRef = useRef<string | null>(null);
+  const runActiveSeenRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (!run) {
+      setAnimStage(null);
+      activeRunIdRef.current = null;
+      runActiveSeenRef.current = false;
+      return;
+    }
+
+    if (run.id !== activeRunIdRef.current) {
+      activeRunIdRef.current = run.id;
+      if (isLive) {
+        runActiveSeenRef.current = true;
+        setAnimStage(targetStep);
+      } else {
+        // Historical run that was not live-observed in this session
+        runActiveSeenRef.current = false;
+        setAnimStage(null);
+      }
+      return;
+    }
+
+    // Same run: if it failed/halted, cancel animation and show terminal failure immediately
+    if (statusUpper === "FAILED") {
+      setAnimStage(null);
+      return;
+    }
+
+    // Same run: if it transitions to live
+    if (isLive && !runActiveSeenRef.current) {
+      runActiveSeenRef.current = true;
+      setAnimStage((prev) => (prev !== null ? Math.max(prev, targetStep) : targetStep));
+    } else if (isLive && animStage !== null && targetStep > animStage) {
+      // If backend explicitly advances stage (e.g. from WS event), catch up immediately
+      setAnimStage(targetStep);
+    }
+  }, [run?.id, isLive, targetStep, animStage, statusUpper]);
+
+  // Small artificial minimum delay (~1000ms) so each node is visibly highlighted
+  useEffect(() => {
+    if (animStage === null) return;
+    if (animStage >= 5) {
+      setAnimStage(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setAnimStage((curr) => {
+        if (curr === null || curr >= 5) return null;
+
+        // If at the final verify stage (index 4) and run is still running, wait for terminal resolution
+        if (curr === 4 && run && !isTerminal) {
+          return 4;
+        }
+
+        const next = curr + 1;
+        return next >= 5 ? null : next;
+      });
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [animStage, isTerminal, run]);
+
+  const nodes = useMemo(() => {
+    if (animStage === null) {
+      return baseNodes;
+    }
+
+    return FSM_NODES.map((meta, i) => {
+      let status: NodeStatus;
+      if (animStage >= 5) {
+        status = "completed";
+      } else if (i < animStage) {
+        status = "completed";
+      } else if (i === animStage) {
+        status = "active";
+      } else {
+        status = "pending";
+      }
+
+      return {
+        ...meta,
+        status,
+        latencyMs: baseNodes[i]?.latencyMs ?? null,
+      };
+    });
+  }, [animStage, baseNodes]);
 
   return (
     <section
@@ -133,12 +262,14 @@ export function FSMOrchestratorBar({ run, className }: FSMOrchestratorBarProps) 
                   data-filled={nodes[i - 1].status === "completed" ? "true" : "false"}
                   aria-hidden="true"
                   className={cn(
-                    "block h-px w-5 shrink-0 self-center",
+                    "block h-px w-5 shrink-0 self-center transition-colors duration-500",
                     nodes[i - 1].status === "completed"
-                      ? "bg-verified-emerald/60"
-                      : nodes[i - 1].status === "failed"
-                        ? "bg-defect-crimson/50"
-                        : "bg-border-subtle",
+                      ? "bg-verified-emerald/80 shadow-[0_0_6px_rgba(16,185,129,0.4)]"
+                      : nodes[i - 1].status === "active"
+                        ? "bg-laser-cyan/60 animate-pulse"
+                        : nodes[i - 1].status === "failed"
+                          ? "bg-defect-crimson/50"
+                          : "bg-border-subtle",
                   )}
                 />
               ) : null}

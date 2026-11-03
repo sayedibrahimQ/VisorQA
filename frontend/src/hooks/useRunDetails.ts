@@ -49,20 +49,16 @@ export function useRunDetails(
   const refetch = useCallback(() => setNonce((n) => n + 1), []);
 
   const statusUpper = (details?.status ?? "").toUpperCase();
-  const isActive = Boolean(
-    runId &&
-      details &&
-      !details.is_resolved &&
-      ["RUNNING", "SENSE", "TRIAGE", "PATCH", "DIAGNOSE", "VERIFY", "QUEUED", "PENDING"].some((s) =>
-        statusUpper.includes(s),
-      ),
-  );
+  const isTerminal = details
+    ? Boolean(details.is_resolved || ["RESOLVED", "FAILED", "SUPERSEDED"].includes(statusUpper))
+    : false;
+  const isActive = Boolean(runId && !isTerminal);
 
   useEffect(() => {
     if (!isActive) return;
     const interval = setInterval(() => {
       refetch();
-    }, 2000);
+    }, 1000);
     return () => clearInterval(interval);
   }, [isActive, refetch]);
 

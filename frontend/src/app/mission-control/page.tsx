@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
 import { ScanEye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -82,6 +84,7 @@ export default function MissionControlPage() {
     selectRun,
     rehydrate,
     clearRuns,
+    applyRunUpdate,
   } = useMissionControlStream({ repo: selectedRepo ?? undefined });
   // Boot: the DB-persisted watched repo is the source of truth and wins
   // over any stale ?repo= param.
@@ -339,7 +342,11 @@ export default function MissionControlPage() {
           ? String((body as Record<string, unknown>).id)
           : "";
       if (id) {
+        if (body && typeof body === "object") {
+          applyRunUpdate(body as Record<string, unknown>);
+        }
         selectRun(id);
+        rehydrate();
       }
       setActionMsg({ text: `Optical QA scan dispatched for ${selectedRepo}${prNumber ? ` PR #${prNumber}` : ` @ ${branch}`} (run ${id}). Live progress streams in automatically.` });
     } catch (err) {
@@ -391,7 +398,19 @@ export default function MissionControlPage() {
     return (
       <main className="min-h-screen bg-canvas text-text-primary">
         <div className="mx-auto max-w-[1440px] px-4 py-6">
-          <h1 className="font-display text-2xl font-semibold">Mission Control</h1>
+          <div className="flex items-center gap-3 mb-6">
+            <Link href="/" className="flex items-center gap-2 group">
+              <Image
+                src="/logo.png"
+                alt="VisorQA"
+                width={130}
+                height={36}
+                className="h-8 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
+              />
+            </Link>
+            <span className="text-border-strong select-none">/</span>
+            <h1 className="font-display text-xl font-semibold text-zinc-300">Mission Control</h1>
+          </div>
           <LoginGate />
         </div>
       </main>
@@ -403,9 +422,20 @@ export default function MissionControlPage() {
       <div className="mx-auto w-full max-w-[1680px] p-4 sm:p-6 flex flex-col flex-1 min-h-0">
         <div className="shrink-0 flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-4">
           <div className="min-w-0">
-            <h1 className="font-display text-2xl font-semibold">
-              Mission Control
-            </h1>
+            <div className="flex items-center gap-3">
+              <Link href="/" className="flex items-center gap-2 group transition-transform active:scale-95" title="Back to VisorQA Home">
+                <Image
+                  src="/icon.png"
+                  alt="VisorQA"
+                  width={28}
+                  height={28}
+                  className="h-7 w-7 rounded object-contain transition-transform duration-200 group-hover:scale-105"
+                />
+              </Link>
+              <h1 className="font-display text-2xl font-semibold">
+                Mission Control
+              </h1>
+            </div>
             <p className="mt-1 truncate text-sm text-text-secondary">
               Live PR telemetry — new webhook runs focus automatically.
             </p>

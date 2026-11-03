@@ -55,9 +55,22 @@ const STEP_INDEX: Record<FSMStep, number> = {
   "5.VERIFY": 4,
 };
 
-export function stepIndex(step: FSMStep | string | undefined): number {
-  if (typeof step === "string" && step in STEP_INDEX) {
-    return STEP_INDEX[step as FSMStep];
+export function stepIndex(step: FSMStep | string | number | undefined): number {
+  if (typeof step === "number") {
+    if (step >= 1 && step <= 5) return step - 1;
+    if (step >= 0 && step <= 4) return step;
+    return 0;
+  }
+  if (typeof step === "string") {
+    if (step in STEP_INDEX) {
+      return STEP_INDEX[step as FSMStep];
+    }
+    const upper = step.toUpperCase();
+    if (upper.includes("SENSE")) return 0;
+    if (upper.includes("TRIAGE")) return 1;
+    if (upper.includes("DIAGNOSE")) return 2;
+    if (upper.includes("PATCH")) return 3;
+    if (upper.includes("VERIFY") || upper.includes("COMMIT")) return 4;
   }
   return 0;
 }
@@ -101,7 +114,7 @@ export function getNodeStates(run: PRRun | null): FSMNodeState[] {
   }
   // String-typed: the backend also emits QUEUED/FALLBACK beyond RunStatus.
   const status: string = typeof run.status === "string" ? run.status : "PENDING";
-  const current = stepIndex(run.current_step);
+  const current = stepIndex(run.current_stage || run.current_step);
   const entered = loopEntered(run);
 
   if (status === "RESOLVED") {

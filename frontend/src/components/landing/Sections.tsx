@@ -2,15 +2,14 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
   Bot,
-  Check,
   CheckCircle2,
   Code2,
-  Copy,
   Cpu,
   FileCode,
   FolderTree,
@@ -30,7 +29,6 @@ import {
 import { DiffViewer } from "@/components/DiffViewer";
 import { LiveTrace } from "@/components/LiveTrace";
 import {
-  CLI_CMD,
   FOCUS,
   MISSION_CONTROL_URL,
   REPO_URL,
@@ -825,33 +823,6 @@ export function Faq() {
  * 8. FINAL CONVERSION CTA
  * ----------------------------------------------------------------------- */
 export function FinalCta() {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(CLI_CMD);
-      } else {
-        throw new Error("clipboard unavailable");
-      }
-    } catch {
-      const area = document.createElement("textarea");
-      area.value = CLI_CMD;
-      area.style.position = "fixed";
-      area.style.opacity = "0";
-      document.body.appendChild(area);
-      area.select();
-      try {
-        document.execCommand("copy");
-      } catch {
-        /* fallback */
-      }
-      document.body.removeChild(area);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   return (
     <section aria-label="Get started with VisorQA" className="mt-24">
       <div className="relative overflow-hidden rounded-lg border border-border-subtle bg-surface px-6 py-12 text-center md:py-16 shadow-2xl">
@@ -872,32 +843,8 @@ export function FinalCta() {
           Connect your repository and let VisorQA catch visual regressions and push verified fixes before your reviewers even notice.
         </p>
 
-        {/* Terminal quickstart snippet */}
-        <div className="mx-auto mt-6 flex max-w-md items-center justify-between gap-3 rounded-md border border-border-subtle bg-canvas/90 px-4 py-2.5 font-mono text-xs shadow-inner">
-          <div className="flex items-center gap-2 truncate">
-            <span className="text-cyan-400 select-none">$</span>
-            <span className="truncate text-text-primary">{CLI_CMD}</span>
-          </div>
-          <button
-            type="button"
-            onClick={handleCopy}
-            aria-label={copied ? "Copied to clipboard" : "Copy command"}
-            className={cn(
-              "flex items-center gap-1.5 rounded border border-border-subtle bg-elevated px-2 py-1 text-text-secondary hover:text-text-primary",
-              FOCUS
-            )}
-          >
-            {copied ? (
-              <Check className="h-3 w-3 text-verified-emerald" />
-            ) : (
-              <Copy className="h-3 w-3" />
-            )}
-            <span className="text-[10px]">{copied ? "Copied" : "Copy"}</span>
-          </button>
-        </div>
-
         {/* Dual Actions */}
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link
             href={MISSION_CONTROL_URL}
             className={cn(
@@ -983,10 +930,14 @@ export function Footer() {
     <footer className="mt-24 border-t border-border-subtle bg-canvas">
       <div className="grid grid-cols-2 gap-8 py-12 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="font-display text-lg font-semibold text-text-primary">
-              Visor<span className="text-cyan-400">QA</span>
-            </span>
+          <div className="flex items-center gap-3">
+            <Image
+              src="/logo.png"
+              alt="VisorQA"
+              width={120}
+              height={34}
+              className="h-7 w-auto object-contain"
+            />
             <span className="rounded bg-elevated px-1.5 py-0.5 font-mono text-[9px] text-text-muted border border-border-subtle">
               L4 AGENT
             </span>

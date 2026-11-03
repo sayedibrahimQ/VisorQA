@@ -98,6 +98,7 @@ export interface RunDetails {
   commit_sha: string;
   status: string;
   current_step: string;
+  current_stage?: string;
   strikes: number;
   attempts: AttemptTelemetry[];
   triage_metadata: TriageMetadataPayload;
@@ -211,6 +212,7 @@ export interface PRRun {
   commit_sha: string;
   status: RunStatus;
   current_step: FSMStep;
+  current_stage?: string;
   strikes: number;
   anomalies_count?: number;
   anomalies?: Anomaly[];

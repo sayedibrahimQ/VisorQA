@@ -169,17 +169,12 @@ register("S7", "Scenario: Developer Onboarding & Quickstart Conversion Funnel", 
   const sectionsSrc = readFrontend("src/components/landing/Sections.tsx");
   const sharedSrc = readFrontend("src/components/landing/shared.tsx");
 
-  // CLI snippet present in Hero and CTA
-  assert(heroSrc.includes("CLI_CMD"), "Hero features quickstart command");
-  assert(sectionsSrc.includes("CLI_CMD"), "Final CTA features quickstart command");
-  assert(sharedSrc.includes("npx visorqa init"), "Command is npx visorqa init");
+  // Mission Control entrypoints in Hero and Final CTA
+  assert(heroSrc.includes("MISSION_CONTROL_URL"), "Hero links to Mission Control");
+  assert(sectionsSrc.includes("MISSION_CONTROL_URL"), "Final CTA links to Mission Control");
 
   // External repository links
   assert(sharedSrc.includes("https://github.com/sayedibrahimQ/VisorQA"), "GitHub repository link defined");
-
-  // Interactive copy feedback
-  assert(heroSrc.includes("useCopy"), "Hero provides clipboard feedback");
-  assert(sectionsSrc.includes("handleCopy"), "Final CTA provides clipboard feedback");
 });
 
 register("S8", "Scenario: Semantic HTML & Accessibility (a11y) Conformance Audit", () => {

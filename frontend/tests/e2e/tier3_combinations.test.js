@@ -86,13 +86,12 @@ register("C5", "Combo: Desktop Viewport Switch + Multi-Column Catalog Navigation
   assert(src.includes("useStageScale"), "Scaled wrapper must dynamically adjust to container without horizontal blowout");
 });
 
-register("C6", "Combo: Hero Quickstart Copy Button + Terminal Command Snippet", () => {
+register("C6", "Combo: Hero Live PR Inspection + Mission Control Permalinks", () => {
   const heroSrc = readFrontend("src/components/landing/Hero.tsx");
   const sharedSrc = readFrontend("src/components/landing/shared.tsx");
-  // Copy button in Hero must copy the exact CLI_CMD string displayed in terminal box
-  assert(sharedSrc.includes('CLI_CMD = "npx visorqa init"'), "shared.tsx must define CLI_CMD");
-  assert(heroSrc.includes("copy(CLI_CMD)"), "Hero copy button must pass CLI_CMD to copy hook");
-  assert(heroSrc.includes("{CLI_CMD}"), "Terminal code block must display {CLI_CMD}");
+  assert(sharedSrc.includes("MISSION_CONTROL_URL"), "shared.tsx must define MISSION_CONTROL_URL");
+  assert(heroSrc.includes("MISSION_CONTROL_URL"), "Hero must link to Mission Control");
+  assert(heroSrc.includes("aether-hardware/pull/3"), "Hero must link to live PR #3");
 });
 
 register("C7", "Combo: Sticky Header Navigation Links + In-Page Landmark Anchors", () => {
