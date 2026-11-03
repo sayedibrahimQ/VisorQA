@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, Menu, Star, X } from "lucide-react";
 import { FOCUS, MISSION_CONTROL_URL, REPO_URL } from "./shared";
 import { cn } from "@/lib/utils";
@@ -17,56 +18,15 @@ export const NAV_LINKS = [
 
 export function Logo() {
   return (
-    <span className="flex items-center gap-2.5" aria-hidden="true">
-      <svg
-        width="28"
-        height="28"
-        viewBox="0 0 28 28"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className="shrink-0 transition-transform duration-200 group-hover:scale-105"
-      >
-        <rect
-          x="1.5"
-          y="1.5"
-          width="25"
-          height="25"
-          rx="6"
-          fill="#111115"
-          stroke="#22222A"
-          strokeWidth="1.5"
-        />
-        <rect
-          x="2.5"
-          y="2.5"
-          width="23"
-          height="23"
-          rx="5"
-          stroke="#FAFAFA"
-          strokeWidth="1"
-          strokeOpacity="0.2"
-        />
-        {/* Visor horizontal laser scanline */}
-        <path
-          d="M6 14h16"
-          stroke="#00F0FF"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
-        {/* Central sensor aperture */}
-        <circle
-          cx="14"
-          cy="14"
-          r="2.5"
-          fill="#0A0A0C"
-          stroke="#00F0FF"
-          strokeWidth="1.5"
-        />
-        <circle cx="14" cy="14" r="1" fill="#FAFAFA" />
-      </svg>
-      <span className="font-display text-lg font-semibold tracking-tight text-text-primary">
-        Visor<span className="text-cyan-400">QA</span>
-      </span>
+    <span className="flex items-center gap-2" aria-hidden="true">
+      <Image
+        src="/logo.png"
+        alt="VisorQA"
+        width={135}
+        height={38}
+        priority
+        className="h-8 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
+      />
     </span>
   );
 }
