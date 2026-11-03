@@ -363,6 +363,40 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
         logger.warning(f"auto_publish_github_telemetry_and_commit skipped: no token for run {getattr(state, 'run_id', '')}")
         return {"status": "skipped", "reason": "no_token"}
 
+    # Prevent duplicate publish within same run
+    if hasattr(state, "repair_spec") and isinstance(state.repair_spec, dict):
+        existing_pub = state.repair_spec.get("github_publish")
+        if existing_pub and existing_pub.get("pr_comment_url"):
+            logger.info(f"auto_publish_github_telemetry_and_commit already published for run {run_id}, skipping duplicate")
+            return existing_pub
+
+    # Prevent infinite webhook loops: Check if the latest commit on the PR is already authored by the bot
+    try:
+        st_head, head_commit_data = await github_api("GET", f"https://api.github.com/repos/{repo}/commits/{branch}", tok)
+        if st_head not in (200, 201) and settings.GITHUB_PAT and tok != settings.GITHUB_PAT:
+            st_head, head_commit_data = await github_api("GET", f"https://api.github.com/repos/{repo}/commits/{branch}", settings.GITHUB_PAT.strip())
+
+        if st_head == 200 and isinstance(head_commit_data, dict):
+            commit_obj = head_commit_data.get("commit") or {}
+            author_obj = commit_obj.get("author") or {}
+            author_login = ((head_commit_data.get("author") or {}).get("login") or "").lower()
+            author_name = str(author_obj.get("name") or "").lower()
+            commit_msg = str(commit_obj.get("message") or "")
+
+            bot_identifiers = {"visorqa-agent[bot]", "visorqa[bot]", "visorqa-bot[bot]", "visorqa-agent", "visorqa-bot"}
+            if (
+                author_login in bot_identifiers
+                or any(bot in author_name for bot in ("visorqa-agent", "visorqa[bot]", "visorqa-bot"))
+                or commit_msg.startswith("fix(visorqa):")
+            ):
+                logger.info(
+                    f"auto_publish_github_telemetry_and_commit skipped: latest commit on {repo}@{branch} "
+                    f"is already authored by bot ({author_login or author_name}), preventing webhook loop"
+                )
+                return {"status": "skipped", "reason": "already_authored_by_bot"}
+    except Exception as head_err:
+        logger.warning(f"Could not verify latest commit author on {repo}@{branch}: {head_err}")
+
     result: Dict[str, Any] = {"commit_sha": None, "commit_url": None, "comment_url": None}
 
     # 1. Commit and push the patched file to the PR branch via Contents API
@@ -467,10 +501,47 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
             "*Generated automatically by [VisorQA](https://visorqa.sayedibrahim.com) — Autonomous Optical QA for Modern Web Applications.*",
         ]
         body_md = "\n".join(body_lines)
+
+        # Idempotent cleanup: Delete previous "VisorQA Optical Telemetry Report" comments to prevent comment spam
+        try:
+            page = 1
+            while True:
+                comments_url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments?per_page=100&page={page}"
+                st_comments, comments_data = await github_api("GET", comments_url, tok)
+                if st_comments not in (200, 201) and settings.GITHUB_PAT and tok != settings.GITHUB_PAT:
+                    tok = settings.GITHUB_PAT.strip()
+                    st_comments, comments_data = await github_api("GET", comments_url, tok)
+
+                if st_comments != 200 or not isinstance(comments_data, list) or not comments_data:
+                    break
+
+                for comment in comments_data:
+                    if isinstance(comment, dict) and "VisorQA Optical Telemetry Report" in str(comment.get("body") or ""):
+                        comment_id = comment.get("id")
+                        if comment_id:
+                            del_url = f"https://api.github.com/repos/{repo}/issues/comments/{comment_id}"
+                            del_status, _ = await github_api("DELETE", del_url, tok)
+                            logger.info(
+                                f"Deleted previous telemetry report comment {comment_id} on {repo}#{pr_number} (status {del_status})"
+                            )
+
+                if len(comments_data) < 100:
+                    break
+                page += 1
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to clean up previous telemetry comments: {cleanup_err}")
+
+        # Post single fresh telemetry report
         st_comm, resp_comm = await github_api(
-            "POST", f"/repos/{repo}/issues/{pr_number}/comments", tok,
+            "POST", f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments", tok,
             json={"body": body_md}
         )
+        if st_comm not in (200, 201) and settings.GITHUB_PAT and tok != settings.GITHUB_PAT:
+            tok = settings.GITHUB_PAT.strip()
+            st_comm, resp_comm = await github_api(
+                "POST", f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments", tok,
+                json={"body": body_md}
+            )
         if st_comm in (200, 201) and isinstance(resp_comm, dict):
             result["comment_url"] = resp_comm.get("html_url")
             logger.info(f"Successfully posted PR telemetry comment to {repo}#{pr_number}: {result['comment_url']}")
