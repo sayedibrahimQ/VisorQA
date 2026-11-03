@@ -562,6 +562,14 @@ def build_run_payload(
         attempts_out.append(_fill_artifact_urls(telemetry, entries_list))
 
     strikes = max([int(r.get("attempt_number", 0) or 0) for r in raw_attempts] or [0])
+    cur_step = run.get("current_step", "1.SENSE")
+    cur_stage = run.get("current_stage")
+    if not cur_stage:
+        if isinstance(cur_step, str) and "." in cur_step:
+            cur_stage = cur_step.split(".")[-1]
+        else:
+            cur_stage = str(cur_step)
+
     return {
         "id": run.get("id"),
         "pr_number": run.get("pr_number", 0),
@@ -570,7 +578,9 @@ def build_run_payload(
         "branch": run.get("branch", ""),
         "commit_sha": run.get("commit_sha", ""),
         "status": run.get("status", "PENDING"),
-        "current_step": run.get("current_step", "1.SENSE"),
+        "current_step": cur_step,
+        "current_stage": cur_stage,
+        "stage_status": run.get("stage_status", "RUNNING" if run.get("status") == "RUNNING" else "DONE"),
         "stage_error": run.get("stage_error") or repair_spec_state.get("stage_error") or repair_spec_state.get("sense_error") or run.get("error"),
         "error": run.get("error") or run.get("stage_error") or repair_spec_state.get("stage_error") or repair_spec_state.get("sense_error"),
         "strikes": strikes,
@@ -637,6 +647,13 @@ def persist_run_telemetry(state: Any, store: Optional[ArtifactStore] = None) -> 
             except Exception:
                 continue
 
+    cur_step = str(getattr(getattr(state, "current_step", ""), "value",
+                           getattr(state, "current_step", ""))) or "1.SENSE"
+    cur_stage = str(getattr(getattr(state, "current_stage", ""), "value",
+                            getattr(state, "current_stage", "")))
+    if not cur_stage:
+        cur_stage = cur_step.split(".")[-1] if "." in cur_step else cur_step
+
     run_record: Dict[str, Any] = {
         "id": run_id,
         "pr_number": getattr(state, "pr_number", 0),
@@ -645,8 +662,9 @@ def persist_run_telemetry(state: Any, store: Optional[ArtifactStore] = None) -> 
         "branch": getattr(state, "branch", ""),
         "commit_sha": getattr(state, "commit_sha", ""),
         "status": str(getattr(getattr(state, "status", ""), "value", getattr(state, "status", ""))),
-        "current_step": str(getattr(getattr(state, "current_step", ""), "value",
-                                    getattr(state, "current_step", ""))),
+        "current_step": cur_step,
+        "current_stage": cur_stage,
+        "stage_status": str(getattr(state, "stage_status", "RUNNING" if getattr(state, "status", "") == "RUNNING" else "DONE")),
         "max_attempts": getattr(state, "max_attempts", 3),
         "target_files": list(getattr(state, "target_files", []) or []),
         "repair_spec": repair_spec,
