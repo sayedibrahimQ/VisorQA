@@ -317,6 +317,8 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
     repository (no demo fallback, no cross-repo leakage).
     """
     repo_filter = (repo or "").strip()
+    from backend.core.orchestrator import get_live_run_stage
+
     results: List[Dict[str, Any]] = []
     try:
         from backend.db.repository import AsyncSessionLocal, RunRepository
@@ -326,6 +328,10 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
             for r in db_runs:
                 if repo_filter and r.repo_full_name != repo_filter:
                     continue
+                live = get_live_run_stage(r.id)
+                step = (live.get("current_step") if live else None) or ("5.VERIFY" if r.status in ("RESOLVED", "FAILED") else "1.SENSE")
+                stage = (live.get("current_stage") if live else None) or (step.split(".")[-1] if step else "SENSE")
+                status_val = (live.get("status") if live else None) or r.status
                 results.append({
                     "id": r.id,
                     "pr_number": r.pr_number,
@@ -333,8 +339,9 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
                     "repo_name": r.repo_full_name,
                     "branch": r.branch,
                     "commit_sha": r.commit_sha,
-                    "status": r.status,
-                    "current_step": "5.VERIFY" if r.status in ("RESOLVED", "FAILED") else "1.SENSE",
+                    "status": status_val,
+                    "current_step": step,
+                    "current_stage": stage,
                     "strikes": r.attempt,
                     "anomalies_count": len(r.anomalies) if r.anomalies else 0,
                     "updated_at": r.updated_at.isoformat() if getattr(r, "updated_at", None) else None,
@@ -356,6 +363,10 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
             rec_repo = rec.get("repo_full_name") or rec.get("repo_name") or ""
             if repo_filter and rec_repo != repo_filter:
                 continue
+            live = get_live_run_stage(rec_id)
+            step = (live.get("current_step") if live else None) or rec.get("current_step", "1.SENSE")
+            stage = (live.get("current_stage") if live else None) or rec.get("current_stage") or (step.split(".")[-1] if step else "SENSE")
+            status_val = (live.get("status") if live else None) or rec.get("status", "PENDING")
             results.append({
                 "id": rec.get("id"),
                 "pr_number": rec.get("pr_number", 0),
@@ -363,8 +374,9 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
                 "repo_name": rec.get("repo_name", ""),
                 "branch": rec.get("branch", ""),
                 "commit_sha": rec.get("commit_sha", ""),
-                "status": rec.get("status", "PENDING"),
-                "current_step": rec.get("current_step", "1.SENSE"),
+                "status": status_val,
+                "current_step": step,
+                "current_stage": stage,
                 "strikes": max([int(a.get("attempt_number", 0) or 0)
                                 for a in rec.get("attempts_raw", [])] or [0]),
                 "anomalies_count": len(rec.get("anomalies", []) or []),
@@ -675,6 +687,9 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
     registry (live-persisted runs only). Unknown ids return 404.
     """
     from backend.core.artifacts import ArtifactStore, build_run_payload
+    from backend.core.orchestrator import get_live_run_stage
+
+    live = get_live_run_stage(run_id)
 
     try:
         from backend.db.repository import AsyncSessionLocal, RunRepository
@@ -682,6 +697,10 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
             repo = RunRepository(session)
             run = await repo.get_run_by_id(run_id)
             if run:
+                step = (live.get("current_step") if live else None) or ("5.VERIFY" if run.status in ("RESOLVED", "FAILED") else "1.SENSE")
+                stage = (live.get("current_stage") if live else None) or (step.split(".")[-1] if step else "SENSE")
+                status_val = (live.get("status") if live else None) or run.status
+
                 run_dict: Dict[str, Any] = {
                     "id": run.id,
                     "pr_number": run.pr_number,
@@ -690,8 +709,9 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
                     "repo_full_name": run.repo_full_name,
                     "branch": run.branch,
                     "commit_sha": run.commit_sha,
-                    "status": run.status,
-                    "current_step": "5.VERIFY" if run.status in ("RESOLVED", "FAILED") else "1.SENSE",
+                    "status": status_val,
+                    "current_step": step,
+                    "current_stage": stage,
                     "max_attempts": run.max_attempts,
                     "target_files": run.target_files or [],
                     "is_resolved": run.is_resolved,
@@ -747,18 +767,52 @@ async def get_run_details(run_id: str) -> Dict[str, Any]:
                         attempt_dicts = record.get("attempts_raw", []) or []
                     if not anomaly_dicts:
                         anomaly_dicts = record.get("anomalies", []) or []
-                return build_run_payload(run_dict, anomaly_dicts, attempt_dicts, entries)
+                payload = build_run_payload(run_dict, anomaly_dicts, attempt_dicts, entries)
+                if live:
+                    if "current_stage" in live:
+                        payload["current_stage"] = live["current_stage"]
+                    if "current_step" in live:
+                        payload["current_step"] = live["current_step"]
+                    if "status" in live:
+                        payload["status"] = live["status"]
+                    if "stage_status" in live:
+                        payload["stage_status"] = live["stage_status"]
+                return payload
     except Exception as e:
         logger.warning(f"Could not load run {run_id} from database: {e}")
 
     store = ArtifactStore()
     record = store.get_run_record(run_id)
     if record is not None:
-        return build_run_payload(
+        payload = build_run_payload(
             record,
             record.get("anomalies", []) or [],
             record.get("attempts_raw", []) or [],
             record.get("artifacts", []) or [],
+        )
+        if live:
+            if "current_stage" in live:
+                payload["current_stage"] = live["current_stage"]
+            if "current_step" in live:
+                payload["current_step"] = live["current_step"]
+            if "status" in live:
+                payload["status"] = live["status"]
+            if "stage_status" in live:
+                payload["stage_status"] = live["stage_status"]
+        return payload
+
+    if live is not None:
+        return build_run_payload(
+            {
+                "id": run_id,
+                "status": live.get("status", "RUNNING"),
+                "current_stage": live.get("current_stage", "SENSE"),
+                "current_step": live.get("current_step", "1.SENSE"),
+                "stage_status": live.get("stage_status", "RUNNING"),
+            },
+            [],
+            [],
+            [],
         )
 
     # Honest miss: no DB row and no registry record means the run does

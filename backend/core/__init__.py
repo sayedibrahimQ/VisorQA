@@ -21,7 +21,14 @@ from .vision_math import (
     rasterize_box,
     sibling_pairs_from_hierarchy,
 )
-from .orchestrator import VisorOrchestrator, run_visor_agent
+from .orchestrator import (
+    VisorOrchestrator,
+    run_visor_agent,
+    LIVE_RUN_STAGES,
+    get_live_run_stage,
+    update_live_run_stage,
+    clear_live_run_stage,
+)
 
 __all__ = [
     "AgentState",
@@ -51,4 +58,8 @@ __all__ = [
     "ElementMaskInput",
     "VisorOrchestrator",
     "run_visor_agent",
+    "LIVE_RUN_STAGES",
+    "get_live_run_stage",
+    "update_live_run_stage",
+    "clear_live_run_stage",
 ]

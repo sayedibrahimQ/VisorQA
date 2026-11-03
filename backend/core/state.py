@@ -305,6 +305,7 @@ class AgentState(BaseModel):
     repo_name: str = ""
     status: RunStatus = RunStatus.PENDING
     current_step: FSMStep = FSMStep.SENSE
+    current_stage: str = "SENSE"
     strike_count: int = Field(default=0, ge=0)
     attempts: List[SelfHealingAttempt] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=_utc_now)
@@ -355,6 +356,14 @@ class AgentState(BaseModel):
     ) -> None:
         """Advance agent FSM step"""
         self.current_step = next_step
+        if hasattr(next_step, "name"):
+            self.current_stage = next_step.name
+        elif hasattr(next_step, "value") and "." in str(next_step.value):
+            self.current_stage = str(next_step.value).split(".")[-1]
+        elif isinstance(next_step, str) and "." in next_step:
+            self.current_stage = next_step.split(".")[-1]
+        else:
+            self.current_stage = str(next_step)
         if status is not None:
             self.status = status
             if status == RunStatus.RESOLVED:

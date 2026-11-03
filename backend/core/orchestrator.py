@@ -31,6 +31,8 @@ import asyncio
 import fnmatch
 import inspect
 import logging
+import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -68,6 +70,10 @@ __all__ = [
     "get_e2b_traffic_headers",
     "get_e2b_traffic_token",
     "is_e2b_url",
+    "LIVE_RUN_STAGES",
+    "get_live_run_stage",
+    "update_live_run_stage",
+    "clear_live_run_stage",
 ]
 
 logger = logging.getLogger("visorqa.orchestrator")
@@ -1301,6 +1307,90 @@ async def _broadcast(ws_broadcast: Any, event: str, state: AgentState) -> None:
 # Orchestrator (class wrapper) + canonical run_visor_agent
 # ---------------------------------------------------------------------------
 
+LIVE_RUN_STAGES: Dict[str, Dict[str, Any]] = {}
+
+
+def get_live_run_stage(run_id: str) -> Optional[Dict[str, Any]]:
+    """Return in-memory fast live status for active runs (<10ms HTTP response)."""
+    return LIVE_RUN_STAGES.get(str(run_id))
+
+
+def update_live_run_stage(run_id: str, stage_data: Dict[str, Any]) -> None:
+    """Update in-memory live stage for active runs."""
+    if run_id:
+        rid = str(run_id)
+        existing = LIVE_RUN_STAGES.get(rid, {})
+        existing.update(stage_data)
+        LIVE_RUN_STAGES[rid] = existing
+
+
+def clear_live_run_stage(run_id: str) -> None:
+    """Clear in-memory live stage record."""
+    if run_id:
+        LIVE_RUN_STAGES.pop(str(run_id), None)
+
+
+async def _flush_stage(
+    state: AgentState,
+    stage: str,
+    status: RunStatus = RunStatus.RUNNING,
+    stage_status: str = "RUNNING",
+    orchestrator: Optional[VisorOrchestrator] = None,
+    event_broadcast: Any = None,
+    event_name: Optional[str] = None,
+) -> None:
+    """Flush real stage state atomically to memory, disk artifacts, and DB."""
+    step_map = {
+        "SENSE": FSMStep.SENSE,
+        "TRIAGE": FSMStep.TRIAGE,
+        "DIAGNOSE": FSMStep.DIAGNOSE,
+        "PATCH": FSMStep.PATCH,
+        "VERIFY": FSMStep.VERIFY,
+    }
+    stage_upper = stage.upper()
+    state.current_stage = stage_upper
+    state.current_step = step_map.get(stage_upper, FSMStep.SENSE)
+    state.status = status
+    if status == RunStatus.RESOLVED:
+        state.is_resolved = True
+    state.updated_at = datetime.now(timezone.utc)
+
+    # In-memory fast overlay for <10ms HTTP polling
+    update_live_run_stage(state.run_id, {
+        "current_stage": stage_upper,
+        "current_step": state.current_step.value if hasattr(state.current_step, "value") else str(state.current_step),
+        "status": status.value if hasattr(status, "value") else str(status),
+        "stage_status": stage_status,
+        "attempt": state.attempt,
+        "updated_at": state.updated_at.isoformat(),
+    })
+
+    # Persist live run telemetry record to disk artifacts
+    try:
+        from backend.core.artifacts import persist_run_telemetry
+        persist_run_telemetry(state)
+    except Exception as e:
+        logger.debug(f"Stage flush persist telemetry: {e}")
+
+    # Emit WebSocket event if requested
+    if event_broadcast is not None and event_name:
+        await _broadcast(event_broadcast, event_name, state)
+    elif orchestrator is not None and getattr(orchestrator, "on_state_change", None):
+        try:
+            await orchestrator.emit_update(state)
+        except Exception:
+            pass
+
+    # Safe asynchronous background DB sync
+    try:
+        from backend.db.repository import AsyncSessionLocal, RunRepository
+        async with AsyncSessionLocal() as session:
+            repo = RunRepository(session)
+            await repo.sync_agent_state(state)
+    except Exception:
+        pass
+
+
 NotifyState = Callable[[AgentState], Awaitable[None]]
 
 
@@ -1413,6 +1503,7 @@ async def _drive_fsm(
     ``orchestrator.emit_update`` (class path).
     """
     use_events = event_broadcast is not None
+    min_stage_duration = float(os.getenv("VISORQA_STAGE_MIN_DURATION", "1.5"))
     # Workstream 1: snapshot baseline anomalies before VERIFY re-sense can
     # replace them (additive extra field; FSM behavior unchanged).
     try:
@@ -1427,9 +1518,16 @@ async def _drive_fsm(
         orchestrator.on_state_change = None
         orchestrator.ws_broadcast = None
     try:
-        # Transition: SENSE_STARTED
-        if use_events:
-            await _broadcast(event_broadcast, "SENSE_STARTED", state)
+        # Node 1: SENSE - Set current_stage = "SENSE" (01 Sense: RUNNING, 02..05: PENDING)
+        await _flush_stage(
+            state,
+            stage="SENSE",
+            status=RunStatus.RUNNING,
+            stage_status="RUNNING",
+            orchestrator=orchestrator,
+            event_broadcast=event_broadcast,
+            event_name="SENSE_STARTED",
+        )
 
         # Node 1: SENSE (strict 60s timeout to allow dev boot + Playwright dual capture + Meta SAM)
         try:
@@ -1444,14 +1542,27 @@ async def _drive_fsm(
             spec["stage_error"] = spec["sense_error"]
             state.stage_error = spec["sense_error"]
             state.repair_spec = spec
-            if use_events:
-                await _broadcast(event_broadcast, "RUN_HALTED", state)
-            else:
-                await orchestrator.emit_update(state)
+            await _flush_stage(
+                state,
+                stage="SENSE",
+                status=RunStatus.FAILED,
+                stage_status="FAILED",
+                orchestrator=orchestrator,
+                event_broadcast=event_broadcast,
+                event_name="RUN_HALTED",
+            )
             return state
 
-        if use_events:
-            await _broadcast(event_broadcast, "SENSE_COMPLETE", state)
+        # When Sense finishes, immediately save Before screenshots & Attempt 0 metrics and mark 01 Sense: DONE
+        await _flush_stage(
+            state,
+            stage="SENSE",
+            status=RunStatus.RUNNING,
+            stage_status="DONE",
+            orchestrator=orchestrator,
+            event_broadcast=event_broadcast,
+            event_name="SENSE_COMPLETE",
+        )
 
         _sense_failed = (
             isinstance(state.repair_spec, dict)
@@ -1460,35 +1571,104 @@ async def _drive_fsm(
             # No real capture: honest failure, never a no-defect pass.
             state.is_resolved = False
             state.transition_to(FSMStep.VERIFY, RunStatus.FAILED)
-            if use_events:
-                await _broadcast(event_broadcast, "RUN_HALTED", state)
-            else:
-                await orchestrator.emit_update(state)
+            await _flush_stage(
+                state,
+                stage="SENSE",
+                status=RunStatus.FAILED,
+                stage_status="FAILED",
+                orchestrator=orchestrator,
+                event_broadcast=event_broadcast,
+                event_name="RUN_HALTED",
+            )
             return state
 
         if not state.anomalies:
             state.is_resolved = True
             state.transition_to(FSMStep.VERIFY, RunStatus.RESOLVED)
-            if use_events:
-                await _broadcast(event_broadcast, "RUN_RESOLVED", state)
-            else:
-                await orchestrator.emit_update(state)
+            await _flush_stage(
+                state,
+                stage="VERIFY",
+                status=RunStatus.RESOLVED,
+                stage_status="DONE",
+                orchestrator=orchestrator,
+                event_broadcast=event_broadcast,
+                event_name="RUN_RESOLVED",
+            )
             return state
 
         # Node 2: TRIAGE (once per run, FR-04, 45s timeout)
+        t_triage = time.perf_counter()
+        await _flush_stage(
+            state,
+            stage="TRIAGE",
+            status=RunStatus.RUNNING,
+            stage_status="RUNNING",
+            orchestrator=orchestrator,
+            event_broadcast=event_broadcast,
+            event_name="STAGE_TRANSITION",
+        )
         try:
             state = await asyncio.wait_for(orchestrator.step_2_triage(state), timeout=45.0)
         except asyncio.TimeoutError:
             logger.warning("Node 2 TRIAGE timed out after 45s; using fallback target files")
-        if use_events:
-            await _broadcast(event_broadcast, "TRIAGE_COMPLETE", state)
+
+        elapsed_triage = time.perf_counter() - t_triage
+        if elapsed_triage < min_stage_duration:
+            await asyncio.sleep(min_stage_duration - elapsed_triage)
+
+        # Save LCA triage data and mark 02 Triage: DONE
+        await _flush_stage(
+            state,
+            stage="TRIAGE",
+            status=RunStatus.RUNNING,
+            stage_status="DONE",
+            orchestrator=orchestrator,
+            event_broadcast=event_broadcast,
+            event_name="TRIAGE_COMPLETE",
+        )
 
         # Nodes 3-5: DIAGNOSE -> PATCH -> VERIFY, 3-Strike Loop (BR-1, hard cap 3)
         while state.attempt < min(state.max_attempts, 3):
             state.attempt += 1
             state.strike_count = state.attempt
             try:
+                # Node 3: DIAGNOSE (ensure at least 1.5s elapsed so polling sees 03 Diagnose: RUNNING)
+                t_diag = time.perf_counter()
+                await _flush_stage(
+                    state,
+                    stage="DIAGNOSE",
+                    status=RunStatus.RUNNING,
+                    stage_status="RUNNING",
+                    orchestrator=orchestrator,
+                    event_broadcast=event_broadcast,
+                    event_name="STAGE_TRANSITION",
+                )
                 state = await asyncio.wait_for(orchestrator.step_3_diagnose(state), timeout=60.0)
+                elapsed_diag = time.perf_counter() - t_diag
+                if elapsed_diag < min_stage_duration:
+                    await asyncio.sleep(min_stage_duration - elapsed_diag)
+                # Save RepairSpec and mark 03 Diagnose: DONE
+                await _flush_stage(
+                    state,
+                    stage="DIAGNOSE",
+                    status=RunStatus.RUNNING,
+                    stage_status="DONE",
+                    orchestrator=orchestrator,
+                    event_broadcast=event_broadcast,
+                    event_name="DIAGNOSE_COMPLETE",
+                )
+
+                # Node 4: PATCH (ensure at least 1.5s elapsed so polling sees 04 Patch: RUNNING)
+                t_patch = time.perf_counter()
+                await _flush_stage(
+                    state,
+                    stage="PATCH",
+                    status=RunStatus.RUNNING,
+                    stage_status="RUNNING",
+                    orchestrator=orchestrator,
+                    event_broadcast=event_broadcast,
+                    event_name="STAGE_TRANSITION",
+                )
                 state = await asyncio.wait_for(orchestrator.step_4_patch(state), timeout=60.0)
                 # A PATCH implementation may have recorded the attempt
                 # (legacy mock point); adopt its diff as current_patch.
@@ -1496,6 +1676,30 @@ async def _drive_fsm(
                     latest = state.attempts[-1]
                     if latest.attempt_number == state.attempt and latest.patch_diff:
                         state.current_patch = latest.patch_diff
+                elapsed_patch = time.perf_counter() - t_patch
+                if elapsed_patch < min_stage_duration:
+                    await asyncio.sleep(min_stage_duration - elapsed_patch)
+                # Save patch.diff and mark 04 Patch: DONE
+                await _flush_stage(
+                    state,
+                    stage="PATCH",
+                    status=RunStatus.RUNNING,
+                    stage_status="DONE",
+                    orchestrator=orchestrator,
+                    event_broadcast=event_broadcast,
+                    event_name="PATCH_COMPLETE",
+                )
+
+                # Node 5: VERIFY (05 Verify & Commit: RUNNING)
+                await _flush_stage(
+                    state,
+                    stage="VERIFY",
+                    status=RunStatus.RUNNING,
+                    stage_status="RUNNING",
+                    orchestrator=orchestrator,
+                    event_broadcast=event_broadcast,
+                    event_name="STAGE_TRANSITION",
+                )
                 state = await asyncio.wait_for(orchestrator.step_5_verify(state), timeout=60.0)
             except Exception as exc:
                 # Record the failed strike and continue; never loop forever.
@@ -1533,17 +1737,30 @@ async def _drive_fsm(
                         await auto_publish_github_telemetry_and_commit(state, gh_tok)
                     except Exception as e:
                         logger.warning(f"Auto-publish to GitHub caught: {e}")
-                if use_events:
-                    await _broadcast(event_broadcast, "RUN_RESOLVED", state)
+                # Save After screenshots & Attempt 1 metrics, mark 05 Verify & Commit: DONE, and set run status to RESOLVED
+                await _flush_stage(
+                    state,
+                    stage="VERIFY",
+                    status=RunStatus.RESOLVED,
+                    stage_status="DONE",
+                    orchestrator=orchestrator,
+                    event_broadcast=event_broadcast,
+                    event_name="RUN_RESOLVED",
+                )
                 break
 
         if not state.is_resolved and state.status not in (RunStatus.RESOLVED, RunStatus.FAILED):
             state.status = RunStatus.FAILED
             state.transition_to(FSMStep.VERIFY, RunStatus.FAILED)
-            if use_events:
-                await _broadcast(event_broadcast, "RUN_HALTED", state)
-            else:
-                await orchestrator.emit_update(state)
+            await _flush_stage(
+                state,
+                stage="VERIFY",
+                status=RunStatus.FAILED,
+                stage_status="FAILED",
+                orchestrator=orchestrator,
+                event_broadcast=event_broadcast,
+                event_name="RUN_HALTED",
+            )
     finally:
         orchestrator.on_state_change = saved_callback
         orchestrator.ws_broadcast = saved_ws
@@ -1551,12 +1768,27 @@ async def _drive_fsm(
     if not state.is_resolved:
         # BR-6: halt after Strike 3; best_patch is kept for PR review.
         state.transition_to(FSMStep.VERIFY, RunStatus.FAILED)
-        if use_events:
-            await _broadcast(event_broadcast, "RUN_HALTED", state)
-        else:
-            await orchestrator.emit_update(state)
+        await _flush_stage(
+            state,
+            stage="VERIFY",
+            status=RunStatus.FAILED,
+            stage_status="FAILED",
+            orchestrator=orchestrator,
+            event_broadcast=event_broadcast,
+            event_name="RUN_HALTED",
+        )
     else:
         state.transition_to(FSMStep.VERIFY, RunStatus.RESOLVED)
+
+    # GitHub publication, only when a client was injected: verified runs
+    # commit exactly the authorized verified files; 3-strike failures get
+    # a non-destructive unverified suggestion. Never raises, never forces.
+    github = orchestrator.github_client
+    if (github is not None or getattr(settings, "GITHUB_APP_ID", "")
+            or getattr(settings, "GITHUB_PAT", "")) and state.attempts:
+        from backend.core.github_publish import publish_run_result
+        await publish_run_result(state, github)
+    return state
 
     # GitHub publication, only when a client was injected: verified runs
     # commit exactly the authorized verified files; 3-strike failures get
