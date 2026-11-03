@@ -425,7 +425,7 @@ export default function MissionControlPage() {
             <div className="flex items-center gap-3">
               <Link href="/" className="flex items-center gap-2 group transition-transform active:scale-95" title="Back to VisorQA Home">
                 <Image
-                  src="/icon.png"
+                  src="/visor-icon.png"
                   alt="VisorQA"
                   width={28}
                   height={28}
