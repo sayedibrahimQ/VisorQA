@@ -31,6 +31,7 @@ export interface MissionControlStream {
   selectRun: (runId: string | null) => void;
   rehydrate: () => void;
   clearRuns: () => void;
+  applyRunUpdate: (row: Record<string, unknown>) => void;
 }
 
 export interface StreamOptions {
@@ -164,6 +165,12 @@ class StreamHub {
   clear(): void {
     this.sync.clear();
     this.emitSnapshot();
+  }
+
+  applyRunUpdate(row: Record<string, unknown>): void {
+    if (this.sync.applySingleRun(row)) {
+      this.emitSnapshot();
+    }
   }
 
   private meta() {
@@ -435,6 +442,46 @@ export function useMissionControlStream(
     hubRef.current?.clear();
   }, []);
 
+  const applyRunUpdate = useCallback((row: Record<string, unknown>) => {
+    hubRef.current?.applyRunUpdate(row);
+  }, []);
+
+  // Live stage polling: active runs poll GET /api/runs/{id} every 1000ms
+  // so current_stage and stage transitions reflect immediately in UI
+  useEffect(() => {
+    if (!snapshot.activeRunId) return;
+    const active = snapshot.runs.find((r) => r.id === snapshot.activeRunId);
+    const statusUpper = (active?.status ?? "").toUpperCase();
+    const isTerminal = ["RESOLVED", "FAILED", "SUPERSEDED"].includes(statusUpper);
+    if (isTerminal) return;
+
+    let aborted = false;
+    const interval = setInterval(async () => {
+      if (aborted || !snapshot.activeRunId) return;
+      try {
+        const res = await fetch(
+          `${apiBase}/api/runs/${encodeURIComponent(snapshot.activeRunId)}`
+        );
+        if (!res.ok || aborted) return;
+        const row: unknown = await res.json();
+        if (
+          row &&
+          typeof row === "object" &&
+          (row as Record<string, unknown>).id === snapshot.activeRunId
+        ) {
+          hubRef.current?.applyRunUpdate(row as Record<string, unknown>);
+        }
+      } catch {
+        /* polling resilience */
+      }
+    }, 1000);
+
+    return () => {
+      aborted = true;
+      clearInterval(interval);
+    };
+  }, [apiBase, snapshot.activeRunId, snapshot.runs]);
+
   const activeRun =
     snapshot.activeRunId === null
       ? null
@@ -453,5 +500,6 @@ export function useMissionControlStream(
     selectRun,
     rehydrate,
     clearRuns,
+    applyRunUpdate,
   };
 }

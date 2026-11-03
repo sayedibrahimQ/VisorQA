@@ -43,6 +43,20 @@ const FOCUSABLE_RUN_EVENTS = new Set([
   "TRIAGE_COMPLETE",
   "RUN_RESOLVED",
   "RUN_HALTED",
+  "STAGE_UPDATE",
+  "STAGE_START",
+  "STAGE_COMPLETE",
+  "STAGE_TRANSITION",
+  "STEP_UPDATE",
+  "RUN_UPDATE",
+  "RUN_RUNNING",
+  "RUN_STARTED",
+  "DIAGNOSE_STARTED",
+  "DIAGNOSE_COMPLETE",
+  "PATCH_STARTED",
+  "PATCH_COMPLETE",
+  "VERIFY_STARTED",
+  "VERIFY_COMPLETE",
 ]);
 
 function isAttemptFeedback(event: string): boolean {
@@ -90,6 +104,8 @@ export interface HydratedSnapshot {
 export function runFromRestRow(row: Record<string, unknown>): PRRun | null {
   const id = row.id;
   if (typeof id !== "string" || !id) return null;
+  const current_step = (row.current_step as PRRun["current_step"]) ?? "1.SENSE";
+  const current_stage = typeof row.current_stage === "string" ? row.current_stage : current_step;
   return {
     id,
     pr_number: typeof row.pr_number === "number" ? row.pr_number : 0,
@@ -97,14 +113,19 @@ export function runFromRestRow(row: Record<string, unknown>): PRRun | null {
     branch: typeof row.branch === "string" ? row.branch : "",
     commit_sha: typeof row.commit_sha === "string" ? row.commit_sha : "",
     status: (row.status as RunStatus) ?? "PENDING",
-    current_step: (row.current_step as PRRun["current_step"]) ?? "1.SENSE",
-    strikes: typeof row.strikes === "number" ? row.strikes : 0,
+    current_step,
+    current_stage,
+    strikes: typeof row.strikes === "number" ? row.strikes : typeof row.attempt === "number" ? row.attempt : 0,
     anomalies_count:
       typeof row.anomalies_count === "number" ? row.anomalies_count : undefined,
     updated_at:
       typeof row.updated_at === "string" ? row.updated_at : undefined,
     created_at:
       typeof row.created_at === "string" ? row.created_at : undefined,
+    step_latency_ms:
+      row.step_latency_ms && typeof row.step_latency_ms === "object"
+        ? (row.step_latency_ms as PRRun["step_latency_ms"])
+        : undefined,
   };
 }
 
@@ -121,6 +142,19 @@ export function runFromEnvelope(
   const status = (get("status") as RunStatus) ?? "RUNNING";
   const attempt = get("attempt");
   const anomalies = get("anomalies");
+  const event = envelope.event ?? envelope.type ?? "";
+
+  let step = (get("current_step") as PRRun["current_step"]) || (get("current_stage") as PRRun["current_step"]);
+  if (!step) {
+    if (event === "SENSE_STARTED") step = "1.SENSE";
+    else if (event === "SENSE_COMPLETE") step = "2.TRIAGE";
+    else if (event === "TRIAGE_COMPLETE") step = "3.DIAGNOSE";
+    else if (event.startsWith("ATTEMPT_")) step = "5.VERIFY";
+    else if (event === "RUN_RESOLVED") step = "5.VERIFY";
+    else step = "1.SENSE";
+  }
+  const current_stage = typeof get("current_stage") === "string" ? (get("current_stage") as string) : step;
+
   return {
     run: {
       id: runId,
@@ -135,11 +169,15 @@ export function runFromEnvelope(
       commit_sha:
         typeof get("commit_sha") === "string" ? (get("commit_sha") as string) : "",
       status,
-      current_step:
-        (get("current_step") as PRRun["current_step"]) ?? "1.SENSE",
+      current_step: step,
+      current_stage,
       strikes: typeof attempt === "number" ? attempt : 0,
       anomalies_count: Array.isArray(anomalies) ? anomalies.length : undefined,
       updated_at: envelope.timestamp,
+      step_latency_ms:
+        get("step_latency_ms") && typeof get("step_latency_ms") === "object"
+          ? (get("step_latency_ms") as PRRun["step_latency_ms"])
+          : undefined,
     },
     sourceTs: toEpochMs(envelope.timestamp) || nowMs(),
   };
@@ -187,6 +225,25 @@ export class MissionControlSync {
       changed = true;
     }
     return changed;
+  }
+
+  /**
+   * Apply a single run update (e.g. from active polling GET /api/runs/{id} or scan dispatch).
+   */
+  applySingleRun(row: Record<string, unknown>): boolean {
+    if (!row || typeof row !== "object") return false;
+    const run = runFromRestRow(row);
+    if (!run) return false;
+    const ts = Math.max(
+      toEpochMs(run.updated_at),
+      toEpochMs(row.created_at),
+      nowMs(),
+    );
+    const stored = this.runs.get(run.id);
+    if (stored && stored.sourceTs > ts) return false;
+    this.runs.set(run.id, { run, sourceTs: ts });
+    this.seenArrivalRuns.add(run.id);
+    return true;
   }
 
   /**

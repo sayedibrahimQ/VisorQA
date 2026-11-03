@@ -82,6 +82,7 @@ export default function MissionControlPage() {
     selectRun,
     rehydrate,
     clearRuns,
+    applyRunUpdate,
   } = useMissionControlStream({ repo: selectedRepo ?? undefined });
   // Boot: the DB-persisted watched repo is the source of truth and wins
   // over any stale ?repo= param.
@@ -339,7 +340,11 @@ export default function MissionControlPage() {
           ? String((body as Record<string, unknown>).id)
           : "";
       if (id) {
+        if (body && typeof body === "object") {
+          applyRunUpdate(body as Record<string, unknown>);
+        }
         selectRun(id);
+        rehydrate();
       }
       setActionMsg({ text: `Optical QA scan dispatched for ${selectedRepo}${prNumber ? ` PR #${prNumber}` : ` @ ${branch}`} (run ${id}). Live progress streams in automatically.` });
     } catch (err) {
