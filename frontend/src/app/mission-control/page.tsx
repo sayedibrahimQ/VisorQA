@@ -558,7 +558,7 @@ export default function MissionControlPage() {
                 {status === "open"
                   ? "open"
                   : status === "reconnecting" && reconnectAttempt >= 2
-                  ? `live (polling) · ws reconnecting (retry ${reconnectAttempt})`
+                  ? `live (polling)`
                   : status === "reconnecting"
                   ? `reconnecting (retry ${reconnectAttempt})`
                   : status}

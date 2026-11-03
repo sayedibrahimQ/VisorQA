@@ -58,7 +58,7 @@ export function useRunDetails(
     if (!isActive) return;
     const interval = setInterval(() => {
       refetch();
-    }, 1000);
+    }, 500);
     return () => clearInterval(interval);
   }, [isActive, refetch]);
 

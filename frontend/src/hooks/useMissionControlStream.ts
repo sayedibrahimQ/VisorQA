@@ -446,7 +446,7 @@ export function useMissionControlStream(
     hubRef.current?.applyRunUpdate(row);
   }, []);
 
-  // Live stage polling: active runs poll GET /api/runs/{id} every 1000ms
+  // Live stage polling: active runs poll GET /api/runs/{id} every 500ms
   // so current_stage and stage transitions reflect immediately in UI
   useEffect(() => {
     if (!snapshot.activeRunId) return;
@@ -474,7 +474,7 @@ export function useMissionControlStream(
       } catch {
         /* polling resilience */
       }
-    }, 1000);
+    }, 500);
 
     return () => {
       aborted = true;

@@ -1,11 +1,9 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React from "react";
 import { Check, Loader2, Minus, X } from "lucide-react";
 import {
-  FSM_NODES,
   getNodeStates,
-  stepIndex,
   type FSMNodeState,
   type NodeStatus,
 } from "@/lib/fsmSelectors";
@@ -133,117 +131,11 @@ function NodeCard({ node, reducedMotion }: { node: FSMNodeState; reducedMotion: 
 
 /**
  * Top five-node deterministic FSM stepper.
- * During live execution (e.g. Optical QA scan running), smoothly advances through
- * 01 Sense -> 02 Triage -> 03 Diagnose -> 04 Patch -> 05 Verify & Commit with an
- * artificial ~1000ms minimum display delay per active node so judges see live progress.
+ * Bound 1:1 to real backend stage execution (01 Sense .. 05 Verify & Commit).
  */
 export function FSMOrchestratorBar({ run, className }: FSMOrchestratorBarProps) {
   const reducedMotion = usePrefersReducedMotion();
-  const baseNodes = getNodeStates(run);
-
-  const statusUpper = (run?.status ?? "").toUpperCase();
-  const isTerminal = ["RESOLVED", "FAILED"].includes(statusUpper);
-  const isLive = Boolean(
-    run &&
-      !isTerminal &&
-      ["RUNNING", "QUEUED", "PENDING", "WAITING", "SENSE", "TRIAGE", "DIAGNOSE", "PATCH", "VERIFY"].some((s) =>
-        statusUpper.includes(s)
-      )
-  );
-
-  const targetStep = run ? stepIndex(run.current_stage || run.current_step) : 0;
-
-  // We track the animated stage index (0 to 4: Sense..Verify, 5: all completed)
-  const [animStage, setAnimStage] = useState<number | null>(null);
-  const activeRunIdRef = useRef<string | null>(null);
-  const runActiveSeenRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    if (!run) {
-      setAnimStage(null);
-      activeRunIdRef.current = null;
-      runActiveSeenRef.current = false;
-      return;
-    }
-
-    if (run.id !== activeRunIdRef.current) {
-      activeRunIdRef.current = run.id;
-      if (isLive) {
-        runActiveSeenRef.current = true;
-        setAnimStage(targetStep);
-      } else {
-        // Historical run that was not live-observed in this session
-        runActiveSeenRef.current = false;
-        setAnimStage(null);
-      }
-      return;
-    }
-
-    // Same run: if it failed/halted, cancel animation and show terminal failure immediately
-    if (statusUpper === "FAILED") {
-      setAnimStage(null);
-      return;
-    }
-
-    // Same run: if it transitions to live
-    if (isLive && !runActiveSeenRef.current) {
-      runActiveSeenRef.current = true;
-      setAnimStage((prev) => (prev !== null ? Math.max(prev, targetStep) : targetStep));
-    } else if (isLive && animStage !== null && targetStep > animStage) {
-      // If backend explicitly advances stage (e.g. from WS event), catch up immediately
-      setAnimStage(targetStep);
-    }
-  }, [run?.id, isLive, targetStep, animStage, statusUpper]);
-
-  // Small artificial minimum delay (~1000ms) so each node is visibly highlighted
-  useEffect(() => {
-    if (animStage === null) return;
-    if (animStage >= 5) {
-      setAnimStage(null);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setAnimStage((curr) => {
-        if (curr === null || curr >= 5) return null;
-
-        // If at the final verify stage (index 4) and run is still running, wait for terminal resolution
-        if (curr === 4 && run && !isTerminal) {
-          return 4;
-        }
-
-        const next = curr + 1;
-        return next >= 5 ? null : next;
-      });
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [animStage, isTerminal, run]);
-
-  const nodes = useMemo(() => {
-    if (animStage === null) {
-      return baseNodes;
-    }
-
-    return FSM_NODES.map((meta, i) => {
-      let status: NodeStatus;
-      if (animStage >= 5) {
-        status = "completed";
-      } else if (i < animStage) {
-        status = "completed";
-      } else if (i === animStage) {
-        status = "active";
-      } else {
-        status = "pending";
-      }
-
-      return {
-        ...meta,
-        status,
-        latencyMs: baseNodes[i]?.latencyMs ?? null,
-      };
-    });
-  }, [animStage, baseNodes]);
+  const nodes = getNodeStates(run);
 
   return (
     <section
