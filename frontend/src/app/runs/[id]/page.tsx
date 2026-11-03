@@ -17,7 +17,9 @@ import { DualViewportStage } from "@/components/mission-control/DualViewportStag
 import { MathTrapScorecard } from "@/components/mission-control/MathTrapScorecard";
 import { LCATriageTree } from "@/components/mission-control/LCATriageTree";
 import { ArchitectCoderInspector } from "@/components/mission-control/ArchitectCoderInspector";
+import { FSMOrchestratorBar } from "@/components/mission-control/FSMOrchestratorBar";
 import { adaptRunToStage } from "@/lib/viewportArtifacts";
+import type { PRRun } from "@/types";
 import {
   attemptOptions,
   inspectorForAttempt,
@@ -46,6 +48,20 @@ export default function RunInspectorPage({
   const fallbackStage = adaptRunToStage(null);
   const liveScorecard = details ? scorecardForAttempt(details, effectiveAttempt) : null;
 
+  const runAsPRRun: PRRun | null = details
+    ? {
+        id: details.id,
+        pr_number: details.pr_number,
+        repo_name: details.repo_name,
+        branch: details.branch,
+        commit_sha: details.commit_sha,
+        status: (details.status as PRRun["status"]) ?? "RUNNING",
+        current_step: (details.current_step as PRRun["current_step"]) ?? "1.SENSE",
+        current_stage: details.current_stage || details.current_step,
+        strikes: details.strikes,
+      }
+    : null;
+
   return (
     <main className="min-h-screen bg-canvas text-text-primary">
       <div className="mx-auto max-w-[1440px] px-4 py-6">
@@ -64,7 +80,7 @@ export default function RunInspectorPage({
           </div>
           {details ? (
             <span data-testid="inspector-run-meta" className="font-mono text-xs text-text-secondary">
-              {details.repo_name} PR #{details.pr_number} · {details.status} · strike{" "}
+              {details.repo_name} PR #{details.pr_number} · {details.status} · Strike Counter:{" "}
               {details.strikes}/3
             </span>
           ) : null}
@@ -89,37 +105,40 @@ export default function RunInspectorPage({
         ) : null}
 
         {details ? (
-          <div className="mt-5 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <DualViewportStage
-              runId={details.id}
-              runLabel={`${details.repo_name} PR #${details.pr_number}`}
-              mobile={liveStage ? liveStage.mobile : fallbackStage.mobile}
-              desktop={liveStage ? liveStage.desktop : fallbackStage.desktop}
-              hmr={liveStage ? liveStage.hmr : null}
-              attempts={attemptOptions(details)}
-              selectedAttempt={effectiveAttempt}
-              onAttemptChange={setSelectedAttempt}
-              sandboxProvider={liveStage?.sandboxProvider ?? null}
-              hmrLatencyMs={liveStage?.hmrLatencyMs ?? null}
-            />
-            <aside
-              aria-label="Run telemetry drawer"
-              className="min-w-0 space-y-5 rounded-md border border-border-subtle bg-surface-subtle p-3"
-            >
-              <MathTrapScorecard
-                current={liveScorecard ? liveScorecard.current : null}
-                best={null}
-                baseline={liveScorecard?.baseline ?? null}
-                runActive={details.status === "RUNNING"}
-              />
-              <div className="border-t border-border-subtle" />
-              <LCATriageTree triage={triageForRun(details)} />
-              <div className="border-t border-border-subtle" />
-              <ArchitectCoderInspector
-                data={inspectorForAttempt(details, effectiveAttempt)}
+          <div className="mt-5 space-y-4">
+            <FSMOrchestratorBar run={runAsPRRun} />
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+              <DualViewportStage
                 runId={details.id}
+                runLabel={`${details.repo_name} PR #${details.pr_number}`}
+                mobile={liveStage ? liveStage.mobile : fallbackStage.mobile}
+                desktop={liveStage ? liveStage.desktop : fallbackStage.desktop}
+                hmr={liveStage ? liveStage.hmr : null}
+                attempts={attemptOptions(details)}
+                selectedAttempt={effectiveAttempt}
+                onAttemptChange={setSelectedAttempt}
+                sandboxProvider={liveStage?.sandboxProvider ?? null}
+                hmrLatencyMs={liveStage?.hmrLatencyMs ?? null}
               />
-            </aside>
+              <aside
+                aria-label="Run telemetry drawer"
+                className="min-w-0 space-y-5 rounded-md border border-border-subtle bg-surface-subtle p-3"
+              >
+                <MathTrapScorecard
+                  current={liveScorecard ? liveScorecard.current : null}
+                  best={null}
+                  baseline={liveScorecard?.baseline ?? null}
+                  runActive={details.status === "RUNNING"}
+                />
+                <div className="border-t border-border-subtle" />
+                <LCATriageTree triage={triageForRun(details)} />
+                <div className="border-t border-border-subtle" />
+                <ArchitectCoderInspector
+                  data={inspectorForAttempt(details, effectiveAttempt)}
+                  runId={details.id}
+                />
+              </aside>
+            </div>
           </div>
         ) : null}
       </div>
