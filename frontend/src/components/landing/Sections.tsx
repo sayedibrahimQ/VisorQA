@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Activity,
   AlertTriangle,
@@ -929,10 +930,14 @@ export function Footer() {
     <footer className="mt-24 border-t border-border-subtle bg-canvas">
       <div className="grid grid-cols-2 gap-8 py-12 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="font-display text-lg font-semibold text-text-primary">
-              Visor<span className="text-cyan-400">QA</span>
-            </span>
+          <div className="flex items-center gap-3">
+            <Image
+              src="/logo.png"
+              alt="VisorQA"
+              width={120}
+              height={34}
+              className="h-7 w-auto object-contain"
+            />
             <span className="rounded bg-elevated px-1.5 py-0.5 font-mono text-[9px] text-text-muted border border-border-subtle">
               L4 AGENT
             </span>
