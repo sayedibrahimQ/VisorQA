@@ -232,7 +232,7 @@ def _diff_target_files(diff: str) -> List[str]:
 
 @runs_router.post("/{run_id}/github/comment")
 async def post_telemetry_comment(run_id: str, request: Request) -> Any:
-    token, _, err = await _token_or_401(request)
+    user_token, _, err = await _token_or_401(request)
     if err:
         return err
     record = _load_run_record(run_id)
@@ -242,6 +242,11 @@ async def post_telemetry_comment(run_id: str, request: Request) -> Any:
     pr_number = record.get("pr_number")
     if not repo or not pr_number:
         return JSONResponse({"detail": "run has no repository/PR scope"}, status_code=422)
+
+    from backend.adapters.github_app import resolve_repo_token_and_author
+    token, _ = await resolve_repo_token_and_author(repo, fallback_token=user_token)
+    if not token:
+        return JSONResponse({"detail": "GitHub authentication required"}, status_code=401)
 
     from backend.core.artifacts import build_run_payload
     payload = build_run_payload(record, record.get("anomalies", []) or [],
@@ -279,7 +284,7 @@ async def post_telemetry_comment(run_id: str, request: Request) -> Any:
 
 @runs_router.post("/{run_id}/github/commit")
 async def commit_fix(run_id: str, request: Request) -> Any:
-    token, _, err = await _token_or_401(request)
+    user_token, _, err = await _token_or_401(request)
     if err:
         return err
     record = _load_run_record(run_id)
@@ -295,6 +300,11 @@ async def commit_fix(run_id: str, request: Request) -> Any:
     targets = _diff_target_files(diff)
     if not targets:
         return JSONResponse({"detail": "diff declares no target files"}, status_code=422)
+
+    from backend.adapters.github_app import resolve_repo_token_and_author
+    token, commit_author = await resolve_repo_token_and_author(repo, fallback_token=user_token)
+    if not token:
+        return JSONResponse({"detail": "GitHub authentication required"}, status_code=401)
 
     commits: List[Dict[str, Any]] = []
     for path in targets:
@@ -316,6 +326,8 @@ async def commit_fix(run_id: str, request: Request) -> Any:
                 "content": base64.b64encode(updated.encode("utf-8")).decode("ascii"),
                 "sha": current.get("sha"),
                 "branch": branch,
+                "author": commit_author,
+                "committer": commit_author,
             })
         if status not in (200, 201) or not isinstance(created, dict):
             return JSONResponse({"detail": f"GitHub commit failed for {path} ({status})"},
@@ -333,11 +345,6 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
     import logging
     logger = logging.getLogger("visorqa.github_publish")
 
-    tok = (settings.GITHUB_PAT or token or "").strip()
-    if not tok:
-        logger.warning(f"auto_publish_github_telemetry_and_commit skipped: no token for run {getattr(state, 'run_id', '')}")
-        return {"status": "skipped", "reason": "no_token"}
-
     repo = getattr(state, "repo_full_name", None) or getattr(state, "repo_name", None)
     pr_number = getattr(state, "pr_number", None)
     branch = getattr(state, "branch", None)
@@ -349,6 +356,12 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
     if not repo or not pr_number or not branch:
         logger.warning(f"auto_publish_github_telemetry_and_commit skipped: incomplete scope repo={repo} pr={pr_number} branch={branch}")
         return {"status": "skipped", "reason": "incomplete_scope"}
+
+    from backend.adapters.github_app import resolve_repo_token_and_author
+    tok, commit_author = await resolve_repo_token_and_author(repo, fallback_token=token)
+    if not tok:
+        logger.warning(f"auto_publish_github_telemetry_and_commit skipped: no token for run {getattr(state, 'run_id', '')}")
+        return {"status": "skipped", "reason": "no_token"}
 
     result: Dict[str, Any] = {"commit_sha": None, "commit_url": None, "comment_url": None}
 
@@ -375,6 +388,8 @@ async def auto_publish_github_telemetry_and_commit(state: Any, token: Optional[s
                             "content": base64.b64encode(updated.encode("utf-8")).decode("ascii"),
                             "sha": current.get("sha"),
                             "branch": branch,
+                            "author": commit_author,
+                            "committer": commit_author,
                         }
                     )
                     if put_status in (200, 201) and isinstance(created, dict):
