@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import stat
 import time
 from pathlib import Path
@@ -36,6 +37,16 @@ class GitHubAppAuthError(GitHubAppError):
     pass
 
 
+def _clean_pem(pem_str: Optional[str]) -> str:
+    """Normalize PEM formatting: handle escaped literal '\\n', quotes, and whitespace."""
+    if not pem_str:
+        return ""
+    val = pem_str.strip().strip("'\"")
+    if "\\n" in val:
+        val = val.replace("\\n", "\n")
+    return val.strip()
+
+
 def mask_token(token: Optional[str]) -> str:
     """Safely mask access tokens for logging (e.g. 'ghs_a1b2...c3d4')."""
     if not token:
@@ -57,13 +68,42 @@ class GitHubAppAuth:
         private_key_path: Optional[str] = None,
         default_installation_id: Optional[Any] = None,
     ):
-        self.app_id = (settings.GITHUB_APP_ID if app_id is None else app_id).strip()
-        self._private_key_inline = (settings.GITHUB_PRIVATE_KEY if private_key is None else private_key).strip()
-        self._private_key_path = (settings.GITHUB_PRIVATE_KEY_PATH if private_key_path is None else private_key_path).strip()
-        self.default_installation_id = settings.GITHUB_INSTALLATION_ID if default_installation_id is None else default_installation_id
+        if app_id is not None:
+            self.app_id = str(app_id).strip()
+        else:
+            self.app_id = str(os.getenv("GITHUB_APP_ID") or getattr(settings, "GITHUB_APP_ID", "") or "").strip()
+
+        if private_key is not None:
+            self._private_key_inline = _clean_pem(str(private_key))
+        else:
+            raw_key = (
+                os.getenv("GITHUB_APP_PRIVATE_KEY")
+                or os.getenv("GITHUB_PRIVATE_KEY")
+                or getattr(settings, "GITHUB_APP_PRIVATE_KEY", None)
+                or getattr(settings, "GITHUB_PRIVATE_KEY", None)
+                or ""
+            )
+            self._private_key_inline = _clean_pem(str(raw_key))
+
+        if private_key_path is not None:
+            self._private_key_path = str(private_key_path).strip()
+        else:
+            self._private_key_path = str(
+                os.getenv("GITHUB_PRIVATE_KEY_PATH")
+                or getattr(settings, "GITHUB_PRIVATE_KEY_PATH", "")
+                or ""
+            ).strip()
+
+        self.default_installation_id = (
+            default_installation_id
+            if default_installation_id is not None
+            else getattr(settings, "GITHUB_INSTALLATION_ID", None)
+            or os.getenv("GITHUB_INSTALLATION_ID")
+        )
 
         # Cache: installation_id -> (token_str, expires_at_timestamp)
         self._token_cache: Dict[int, Tuple[str, float]] = {}
+        self._repo_installations: Dict[str, int] = {}
         self._cache_lock = asyncio.Lock()
 
     def is_configured(self) -> bool:
@@ -75,23 +115,27 @@ class GitHubAppAuth:
     def resolve_private_key(self) -> str:
         """Safely load and return the RSA private key PEM string.
 
-        Checks inline PEM first, then candidate paths on disk.
+        Checks inline PEM first (GITHUB_APP_PRIVATE_KEY / GITHUB_PRIVATE_KEY),
+        then candidate paths on disk.
         Warns if file permissions are overly permissive.
         """
         if self._private_key_inline:
             return self._private_key_inline
 
-        if not self._private_key_path:
+        path_val = self._private_key_path
+        if not path_val:
             raise GitHubAppConfigError(
-                "GitHub App private key is not configured. Set GITHUB_PRIVATE_KEY_PATH or GITHUB_PRIVATE_KEY."
+                "GitHub App private key is not configured. Set GITHUB_APP_PRIVATE_KEY, GITHUB_PRIVATE_KEY, or GITHUB_PRIVATE_KEY_PATH."
             )
 
         # Candidate paths (support relative paths from repo root or backend dir)
         candidates = [
-            Path(self._private_key_path),
-            Path.cwd() / self._private_key_path,
-            Path(__file__).resolve().parent.parent / self._private_key_path,
-            Path(__file__).resolve().parent.parent / Path(self._private_key_path).name,
+            Path(path_val),
+            Path.cwd() / path_val,
+            Path(__file__).resolve().parent.parent / path_val,
+            Path(__file__).resolve().parent.parent / Path(path_val).name,
+            Path(__file__).resolve().parent.parent.parent / path_val,
+            Path(__file__).resolve().parent.parent.parent / Path(path_val).name,
         ]
 
         found_path: Optional[Path] = None
@@ -102,7 +146,7 @@ class GitHubAppAuth:
 
         if not found_path:
             raise GitHubAppConfigError(
-                f"GitHub App private key file not found. Checked: {self._private_key_path}"
+                f"GitHub App private key file not found. Checked: {path_val}"
             )
 
         # Security check: warn if key is world-readable on POSIX systems
@@ -117,7 +161,7 @@ class GitHubAppAuth:
             pass
 
         try:
-            pem_content = found_path.read_text(encoding="utf-8").strip()
+            pem_content = _clean_pem(found_path.read_text(encoding="utf-8"))
             if "BEGIN" not in pem_content:
                 raise GitHubAppConfigError(f"Private key file at {found_path} does not look like a valid PEM file.")
             return pem_content
@@ -128,16 +172,16 @@ class GitHubAppAuth:
 
     def generate_jwt(self, app_id: Optional[str] = None, private_key_pem: Optional[str] = None) -> str:
         """Generate RS256 JWT valid for 9 minutes with 60-second clock skew tolerance."""
-        resolved_app_id = (app_id or self.app_id).strip()
+        resolved_app_id = self.app_id if app_id is None else str(app_id).strip()
         if not resolved_app_id:
             raise GitHubAppConfigError("GITHUB_APP_ID is not configured.")
 
-        pem_text = private_key_pem or self.resolve_private_key()
+        pem_text = _clean_pem(private_key_pem or self.resolve_private_key())
 
         now = int(time.time())
         payload = {
             "iat": now - 60,            # 60s clock drift buffer
-            "exp": now + (9 * 60),      # Valid for 9 minutes (max allowed by GitHub is 10)
+            "exp": now + 540,           # Valid for 9 minutes (540s, GitHub max is 10 min)
             "iss": resolved_app_id,
         }
 
@@ -145,6 +189,77 @@ class GitHubAppAuth:
             return jwt.encode(payload, pem_text, algorithm="RS256")
         except Exception as exc:
             raise GitHubAppConfigError(f"Failed to sign GitHub App JWT: {exc}") from exc
+
+    async def get_repo_installation_id(
+        self,
+        repo: str,
+        *,
+        app_id: Optional[str] = None,
+        private_key_pem: Optional[str] = None,
+    ) -> int:
+        """Query GET https://api.github.com/repos/{owner}/{repo}/installation with Authorization: Bearer {jwt} to resolve installation_id."""
+        clean_repo = (repo or "").strip().strip("/")
+        if not clean_repo or "/" not in clean_repo:
+            raise GitHubAppConfigError(f"Invalid repository full name: {repo!r}")
+
+        app_jwt = self.generate_jwt(app_id=app_id, private_key_pem=private_key_pem)
+        headers = {
+            "Authorization": f"Bearer {app_jwt}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        url = f"https://api.github.com/repos/{clean_repo}/installation"
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            res = await client.get(url, headers=headers)
+            if res.status_code == 404:
+                raise GitHubAppAuthError(
+                    f"GitHub App is not installed on repository '{clean_repo}' (HTTP 404)."
+                )
+            if res.status_code == 401:
+                raise GitHubAppAuthError(
+                    "GitHub rejected App JWT: unauthorized (verify App ID and private key match)."
+                )
+            res.raise_for_status()
+            data = res.json()
+
+        inst_id = data.get("id")
+        if not inst_id:
+            raise GitHubAppAuthError(f"GitHub did not return an installation ID for repository '{clean_repo}'.")
+        return int(inst_id)
+
+    async def get_installation_token_for_repo(
+        self,
+        repo: str,
+        *,
+        app_id: Optional[str] = None,
+        private_key_pem: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> str:
+        """Resolve repository installation ID and return the minted installation access token (ghs_...)."""
+        clean_repo = (repo or "").strip().strip("/")
+        inst_id: Optional[int] = None
+        if not force_refresh and clean_repo in self._repo_installations:
+            inst_id = self._repo_installations[clean_repo]
+        else:
+            try:
+                inst_id = await self.get_repo_installation_id(
+                    clean_repo, app_id=app_id, private_key_pem=private_key_pem
+                )
+                self._repo_installations[clean_repo] = inst_id
+            except Exception as exc:
+                default_id = self.default_installation_id or os.getenv("GITHUB_INSTALLATION_ID")
+                if default_id and str(default_id).isdigit():
+                    inst_id = int(str(default_id).strip())
+                else:
+                    raise exc
+
+        return await self.get_installation_token(
+            installation_id=inst_id,
+            app_id=app_id,
+            private_key_pem=private_key_pem,
+            force_refresh=force_refresh,
+        )
 
     async def get_installation_token(
         self,
@@ -245,3 +360,44 @@ class GitHubAppAuth:
 
 # Global singleton instance
 github_app_auth = GitHubAppAuth()
+
+
+async def resolve_repo_token_and_author(
+    repo: Optional[str] = None,
+    fallback_token: Optional[str] = None,
+) -> Tuple[str, Dict[str, str]]:
+    """Resolve GitHub App installation access token with safe fallback to PAT.
+
+    Returns:
+        (token, author_dict)
+        author_dict: {"name": "visorqa[bot]", "email": f"{app_id}+visorqa[bot]@users.noreply.github.com"}
+    """
+    app_id = (
+        os.getenv("GITHUB_APP_ID")
+        or getattr(settings, "GITHUB_APP_ID", "")
+        or "5538390"
+    ).strip()
+    author = {
+        "name": "visorqa[bot]",
+        "email": f"{app_id}+visorqa[bot]@users.noreply.github.com",
+    }
+
+    # 1. Primary: GitHub App Installation Token for the repository
+    try:
+        if github_app_auth.is_configured():
+            if repo:
+                token = await github_app_auth.get_installation_token_for_repo(repo)
+            else:
+                token = await github_app_auth.get_installation_token()
+            if token:
+                return token, author
+    except Exception as exc:
+        logger.info(
+            f"GitHub App token resolution for '{repo}' failed or not installed: {exc}; "
+            "falling back to PAT/OAuth token."
+        )
+
+    # 2. Safe Fallback: user/session token or GITHUB_PAT
+    tok = (fallback_token or settings.GITHUB_PAT or os.getenv("GITHUB_PAT", "") or os.getenv("GITHUB_TOKEN", "") or "").strip()
+    return tok, author
+
