@@ -1,63 +1,20 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React from "react";
 import Link from "next/link";
 import {
   ArrowRight,
-  Check,
   CheckCircle2,
-  Copy,
   ExternalLink,
   GitPullRequest,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { CLI_CMD, FOCUS, MISSION_CONTROL_URL } from "./shared";
+import { FOCUS, MISSION_CONTROL_URL } from "./shared";
 import { ProofPreview } from "./ProofPreview";
 import { cn } from "@/lib/utils";
 
-function useCopy() {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<number | null>(null);
-
-  useEffect(
-    () => () => {
-      if (timer.current !== null) window.clearTimeout(timer.current);
-    },
-    []
-  );
-
-  const copy = useCallback(async (text: string) => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        throw new Error("clipboard unavailable");
-      }
-    } catch {
-      const area = document.createElement("textarea");
-      area.value = text;
-      area.style.position = "fixed";
-      area.style.opacity = "0";
-      document.body.appendChild(area);
-      area.select();
-      try {
-        document.execCommand("copy");
-      } catch {
-        /* fallback */
-      }
-      document.body.removeChild(area);
-    }
-    setCopied(true);
-    if (timer.current !== null) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setCopied(false), 2000);
-  }, []);
-
-  return { copied, copy };
-}
-
 export function Hero() {
-  const { copied, copy } = useCopy();
 
   return (
     <section aria-label="Hero" className="relative pt-2 pb-8 sm:pb-12">
@@ -139,24 +96,6 @@ export function Hero() {
             <span>Inspect Live PR #3</span>
             <ExternalLink className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
           </a>
-
-          {/* Quick CLI snippet */}
-          <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-surface/60 px-3 py-2 backdrop-blur-sm font-mono text-xs">
-            <span className="text-cyan-400 select-none">$</span>
-            <span className="text-text-secondary select-all">{CLI_CMD}</span>
-            <button
-              type="button"
-              onClick={() => copy(CLI_CMD)}
-              title={copied ? "Copied!" : "Copy command"}
-              className="ml-1 p-1 rounded hover:bg-elevated text-text-muted hover:text-text-primary transition-colors"
-            >
-              {copied ? (
-                <Check className="h-3.5 w-3.5 text-verified-emerald" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-            </button>
-          </div>
         </div>
 
         {/* Trust Signals & Architecture Pillars */}

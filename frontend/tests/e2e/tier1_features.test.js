@@ -103,11 +103,10 @@ register("F2.4", "Hero Section: Dual CTAs for Mission Control and live demonstra
   assert(src.includes("ArrowRight"), "Primary button must render Lucide ArrowRight icon");
 });
 
-register("F2.5", "Hero Section: Interactive CLI quickstart bar with clipboard copy", () => {
+register("F2.5", "Hero Section: Inspect Live PR #3 action button", () => {
   const src = readFrontend("src/components/landing/Hero.tsx");
-  assert(src.includes("CLI_CMD"), "Hero must feature quickstart CLI command");
-  assert(src.includes("useCopy"), "Hero must provide clipboard copy hook/function");
-  assert(src.includes("Copy") && src.includes("Copied"), "Must support toggle between Copy and Copied state");
+  assert(src.includes("Inspect Live PR #3"), "Hero must feature Live PR inspection button");
+  assert(src.includes("GitPullRequest"), "Hero must include GitPullRequest icon");
 });
 
 // ============================================================================
