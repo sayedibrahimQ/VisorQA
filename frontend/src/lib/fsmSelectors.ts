@@ -167,12 +167,14 @@ export function getNodeStates(run: PRRun | null): FSMNodeState[] {
       nodeStatus = "pending";
     } else if (i === 0) {
       nodeStatus = "completed"; // advanced past SENSE
-    } else if (i === 1) {
-      // TRIAGE completion needs loop entry (strikes or a recorded attempt);
-      // a bare current_step of VERIFY with zero strikes proves nothing.
-      nodeStatus = entered ? "completed" : "pending";
+    } else if (run.current_stage || entered || i < current) {
+      // Real sequential backend stage: predecessors have completed
+      if (current === 4 && !entered && !run.current_stage && i > 0) {
+        nodeStatus = "pending";
+      } else {
+        nodeStatus = "completed";
+      }
     } else {
-      // DIAGNOSE / PATCH: per-attempt outcomes are unobservable from PRRun.
       nodeStatus = "pending";
     }
     return { ...meta, status: nodeStatus, latencyMs: latencyFor(run, meta.key) };
