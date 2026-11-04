@@ -1,0 +1,176 @@
+<mxfile host="app.diagrams.net" scale="1" border="0">
+  <diagram name="1. System Architecture" id="visorqa_arch_page">
+    <mxGraphModel dx="2200" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title_banner" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#F8FAFC;align=center;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#38bdf8&quot; style=&quot;font-size: 18px;&quot;&gt;🛡️ VisorQA — Autonomous Optical QA &amp; Surgical Self-Healing Frontend Architecture&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size: 12px;&quot;&gt;Closed-Loop 5-Node FSM • Meta AI Foundation Models (SAM 3.1 &amp; Muse Suite) • E2B Micro-VM Sandboxes • PostgreSQL 16 Persistence&lt;/font&gt;" vertex="1">
+          <mxGeometry x="40" y="20" width="2100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_ingress" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#38BDF8;fontColor=#38BDF8;startSize=40;rounded=1;arcSize=6;fontStyle=1;fontSize=12;shadow=1;collapsible=0;" value="&lt;b&gt;1. INGRESS &amp; PRESENTATION&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;GitHub Ecosystem &amp; Next.js 15 UI&lt;/font&gt;" vertex="1">
+          <mxGeometry x="40" y="100" width="330" height="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="card_gh_pr" parent="lane_ingress" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#38bdf8&quot; style=&quot;font-size:13px;&quot;&gt;GitHub Pull Request&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;Developer Ingress Trigger&lt;/font&gt;&lt;br&gt;&lt;br&gt;• PR Open / Synchronize / Push Events&lt;br&gt;• Head Commit SHA &amp; Target Branch&lt;br&gt;• Monitored Storefront Repository&lt;br&gt;• Webhook Delivery Payload" vertex="1">
+          <mxGeometry x="20" y="60" width="290" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="card_gh_bot" parent="lane_ingress" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#34D399;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#34d399&quot; style=&quot;font-size:13px;&quot;&gt;visorqa-agent[bot]&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;GitHub App Integration&lt;/font&gt;&lt;br&gt;&lt;br&gt;• RS256 JWT Authentication&lt;br&gt;• Ephemeral App Installation Tokens&lt;br&gt;• Direct Git Tree Commit Publisher&lt;br&gt;• PR Review Telemetry Comments" vertex="1">
+          <mxGeometry x="20" y="220" width="290" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="card_next_ui" parent="lane_ingress" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#111827;strokeColor=#6366F1;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#818cf8&quot; style=&quot;font-size:13px;&quot;&gt;Next.js 15 Mission Control&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;High-Craft Command Center (frontend/)&lt;/font&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;FSMOrchestratorBar:&lt;/b&gt; 5-Node Stepper&lt;br&gt;• &lt;b&gt;VisualEvidenceCard:&lt;/b&gt; DOM vs SAM Slider&lt;br&gt;• &lt;b&gt;TelemetryMetrics:&lt;/b&gt; Vr, IoU, Bleed, Health&lt;br&gt;• &lt;b&gt;UnifiedDiffViewer:&lt;/b&gt; Syntax Hunk Diff&lt;br&gt;• &lt;b&gt;DualViewportStage:&lt;/b&gt; 375px &amp; 1440px Tabs" vertex="1">
+          <mxGeometry x="20" y="380" width="290" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="card_comms" parent="lane_ingress" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#475569;strokeWidth=1;fontColor=#CBD5E1;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#cbd5e1&quot; style=&quot;font-size:12px;&quot;&gt;Real-Time Protocols&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;Webhook Ingress:&lt;/b&gt; POST HMAC-SHA256&lt;br&gt;• &lt;b&gt;WebSocket:&lt;/b&gt; WS /ws/runs/{id} (Pub/Sub)&lt;br&gt;• &lt;b&gt;REST Polling:&lt;/b&gt; GET /api/runs/{id} (500ms)&lt;br&gt;• Sub-1.2s Ingress-to-FSM handoff" vertex="1">
+          <mxGeometry x="20" y="600" width="290" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_gateway" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#38BDF8;fontColor=#38BDF8;startSize=40;rounded=1;arcSize=6;fontStyle=1;fontSize=12;shadow=1;collapsible=0;" value="&lt;b&gt;2. API GATEWAY &amp; WEBSOCKET HUB&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;FastAPI Ingress &amp; Pub/Sub Broadcaster&lt;/font&gt;" vertex="1">
+          <mxGeometry x="390" y="100" width="350" height="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="card_wh" parent="lane_gateway" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#0284C7;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#38bdf8&quot; style=&quot;font-size:13px;&quot;&gt;FastAPI Webhook Receiver&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;backend/api/webhooks.py&lt;/font&gt;&lt;br&gt;&lt;br&gt;• Validates &lt;b&gt;X-Hub-Signature-256&lt;/b&gt; (HMAC)&lt;br&gt;• Extracts repo, PR #, base/head commit&lt;br&gt;• Enforces Singleton Watched Repo filter&lt;br&gt;• Spawns non-blocking async FSM task&lt;br&gt;• Returns HTTP 202 Accepted in &lt; 100ms" vertex="1">
+          <mxGeometry x="20" y="60" width="310" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="card_ws" parent="lane_gateway" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#6366F1;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#818cf8&quot; style=&quot;font-size:13px;&quot;&gt;Real-Time WebSocket Hub&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;backend/api/routes_ws.py&lt;/font&gt;&lt;br&gt;&lt;br&gt;• Observer Pattern Connection Manager&lt;br&gt;• Sub-10ms in-memory stage broadcasting&lt;br&gt;• Channels:&lt;br&gt;  - &lt;b&gt;STAGE_CHANGED:&lt;/b&gt; FSM stepper updates&lt;br&gt;  - &lt;b&gt;ANOMALY_DETECTED:&lt;/b&gt; Mask artifacts&lt;br&gt;  - &lt;b&gt;ATTEMPT_FEEDBACK:&lt;/b&gt; Diff &amp; health score" vertex="1">
+          <mxGeometry x="20" y="240" width="310" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="card_mem" parent="lane_gateway" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#475569;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#cbd5e1&quot; style=&quot;font-size:13px;&quot;&gt;Sub-10ms In-Memory Stage Store&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;backend/core/artifacts.py &amp; state cache&lt;/font&gt;&lt;br&gt;&lt;br&gt;• Zero-latency ephemeral state for UI&lt;br&gt;• Caches SAM 3.1 mask overlay PNGs&lt;br&gt;• Local artifacts path: &lt;i&gt;artifacts/{run_id}/&lt;/i&gt;&lt;br&gt;• Asynchronously syncs with PostgreSQL" vertex="1">
+          <mxGeometry x="20" y="430" width="310" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="card_rest" parent="lane_gateway" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#475569;strokeWidth=1;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#cbd5e1&quot; style=&quot;font-size:13px;&quot;&gt;REST Control Endpoints&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;backend/api/github_repos.py &amp; main.py&lt;/font&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;GET/PUT /api/github/repositories/watched&lt;/b&gt;&lt;br&gt;• &lt;b&gt;GET /api/runs:&lt;/b&gt; Paginated run list&lt;br&gt;• &lt;b&gt;GET /api/runs/{id}:&lt;/b&gt; Full run audit trail&lt;br&gt;• &lt;b&gt;POST /api/runs/{id}/retry:&lt;/b&gt; Manual retry" vertex="1">
+          <mxGeometry x="20" y="600" width="310" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_fsm" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#1E1B4B;strokeColor=#818CF8;fontColor=#A5B4FC;startSize=40;rounded=1;arcSize=6;fontStyle=1;fontSize=12;shadow=1;collapsible=0;" value="&lt;b&gt;3. 5-NODE DETERMINISTIC FSM &amp; MATH ENGINE&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#a5b4fc&quot; style=&quot;font-size:11px;&quot;&gt;backend/core/orchestrator.py &amp; vision_math.py&lt;/font&gt;" vertex="1">
+          <mxGeometry x="760" y="100" width="470" height="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="card_orch_hdr" parent="lane_fsm" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#312E81;strokeColor=#818CF8;strokeWidth=2;fontColor=#FFFFFF;align=center;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#ffffff&quot; style=&quot;font-size:14px;&quot;&gt;VisorOrchestrator (Deterministic FSM)&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#c7d2fe&quot; style=&quot;font-size:11px;&quot;&gt;Controls state transitions: QUEUED → SENSE → TRIAGE → DIAGNOSE → PATCH → VERIFY&lt;/font&gt;" vertex="1">
+          <mxGeometry x="20" y="55" width="430" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="node_sense" parent="lane_fsm" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=10;fontSize=11;" value="&lt;b&gt;&lt;font color=&quot;#38bdf8&quot;&gt;[NODE 01] SENSE&lt;/font&gt;&lt;/b&gt; — &lt;i&gt;backend/core/sense.py&lt;/i&gt;&lt;br&gt;• Dual-viewport Playwright: Mobile (375×812) &amp; Desktop (1440×900)&lt;br&gt;• Extracts &lt;b&gt;visor-el-id&lt;/b&gt; tags &amp; bounding boxes (B_DOM)&lt;br&gt;• Meta SAM 3.1 zero-shot segmentation → Binary masks (M_SAM)&lt;br&gt;• Initial anomaly detection: Occlusion, Collision, Bleed" vertex="1">
+          <mxGeometry x="20" y="120" width="430" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="node_triage" parent="lane_fsm" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=10;fontSize=11;" value="&lt;b&gt;&lt;font color=&quot;#f59e0b&quot;&gt;[NODE 02] TRIAGE&lt;/font&gt;&lt;/b&gt; — &lt;i&gt;backend/core/triage.py&lt;/i&gt;&lt;br&gt;• Computes Lowest Common Ancestor (LCA) DOM subtree&lt;br&gt;• Meta Muse Spark 1.3 isolates target layout file (88.5% token prune)&lt;br&gt;• &lt;b&gt;Component Shielding:&lt;/b&gt; Locks &lt;i&gt;src/components/ui/*&lt;/i&gt; from edits&lt;br&gt;• Deterministic single-run execution per PR" vertex="1">
+          <mxGeometry x="20" y="225" width="430" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="node_diagnose" parent="lane_fsm" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#C084FC;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=10;fontSize=11;" value="&lt;b&gt;&lt;font color=&quot;#c084fc&quot;&gt;[NODE 03] DIAGNOSE&lt;/font&gt;&lt;/b&gt; — &lt;i&gt;backend/core/diagnose.py&lt;/i&gt;&lt;br&gt;• Meta Muse Wonder 1.0 (Multimodal Optical Architect)&lt;br&gt;• Analyzes red collision-mask overlay image + CSS hierarchy&lt;br&gt;• Produces structured &lt;b&gt;RepairSpec (Pydantic JSON)&lt;/b&gt;&lt;br&gt;• &lt;b&gt;Zero Code Policy:&lt;/b&gt; Pure architectural diagnostic blueprint" vertex="1">
+          <mxGeometry x="20" y="330" width="430" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="node_patch" parent="lane_fsm" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#A855F7;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=10;fontSize=11;" value="&lt;b&gt;&lt;font color=&quot;#a855f7&quot;&gt;[NODE 04] PATCH&lt;/font&gt;&lt;/b&gt; — &lt;i&gt;backend/core/patch.py&lt;/i&gt;&lt;br&gt;• Meta Muse Code 1.3 (Surgical Unified Diff Patcher)&lt;br&gt;• Ingests RepairSpec + isolated target file source code&lt;br&gt;• &lt;b&gt;Anti-Hack CSS Gate:&lt;/b&gt; Rejects !important, z-9999, negative margins&lt;br&gt;• Enforces standard Tailwind responsive breakpoints (md:, lg:)" vertex="1">
+          <mxGeometry x="20" y="435" width="430" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="node_verify" parent="lane_fsm" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#34D399;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=10;fontSize=11;" value="&lt;b&gt;&lt;font color=&quot;#34d399&quot;&gt;[NODE 05] VERIFY&lt;/font&gt;&lt;/b&gt; — &lt;i&gt;backend/core/verify.py&lt;/i&gt;&lt;br&gt;• Applies diff in isolated sandbox via Hot Module Reload (&lt; 300ms HMR)&lt;br&gt;• Re-captures BOTH Mobile (375px) AND Desktop (1440px) viewports&lt;br&gt;• Computes post-repair NumPy discrepancy metrics&lt;br&gt;• &lt;b&gt;Resolution Gate:&lt;/b&gt; Requires Health &lt;b&gt;H &gt;= 0.98 on BOTH viewports&lt;/b&gt;" vertex="1">
+          <mxGeometry x="20" y="540" width="430" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="card_math_engine" parent="lane_fsm" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#111827;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#38bdf8&quot; style=&quot;font-size:13px;&quot;&gt;Vectorized NumPy Math Engine (vision_math.py)&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;Visibility Ratio:&lt;/b&gt; Vr = Area(M_SAM ∩ B_DOM) / Area(B_DOM)  [Fail if &lt; 0.85]&lt;br&gt;• &lt;b&gt;Sibling Collision:&lt;/b&gt; IoU = Area(B_A ∩ B_B) / Area(B_A ∪ B_B)  [Fail if &gt; 0.05]&lt;br&gt;• &lt;b&gt;Horizontal Bleed:&lt;/b&gt; Δx = max(0, (x + w) - W_viewport)  [Fail if &gt; 2.0px]&lt;br&gt;• &lt;b&gt;Composite Health:&lt;/b&gt; H = mean(Vr) - max(IoU) - 0.01·max(Δx)  [Pass &gt;= 0.98]" vertex="1">
+          <mxGeometry x="20" y="645" width="430" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="card_strike_circuit" parent="lane_fsm" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#f59e0b&quot; style=&quot;font-size:13px;&quot;&gt;🔄 3-Strike Self-Healing Feedback Circuit&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;• Bounded loop: Max 3 repair attempts guardrail&lt;br&gt;• If H &lt; 0.98 &amp; attempt &lt; 3: Rollback sandbox, snapshot best patch,&lt;br&gt;  feed failure coordinates back to &lt;b&gt;Node 03 DIAGNOSE&lt;/b&gt;&lt;br&gt;• If H &gt;= 0.98: Mark &lt;b&gt;RESOLVED&lt;/b&gt; → Trigger Git Auto-Commit&lt;br&gt;• If Strike 3 Exhausted: Mark &lt;b&gt;FALLBACK&lt;/b&gt; → Post PR Review Comment" vertex="1">
+          <mxGeometry x="20" y="790" width="430" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_meta" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#C084FC;fontColor=#C084FC;startSize=40;rounded=1;arcSize=6;fontStyle=1;fontSize=12;shadow=1;collapsible=0;" value="&lt;b&gt;4. META AI FOUNDATION MODELS&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#c084fc&quot; style=&quot;font-size:11px;&quot;&gt;Specialized Vision &amp; LLM Inferences&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1250" y="100" width="350" height="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="card_sam" parent="lane_meta" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#38bdf8&quot; style=&quot;font-size:13px;&quot;&gt;Meta SAM 3.1 (sam-3.1)&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;Zero-Shot Optical Segmentation&lt;/font&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;Input:&lt;/b&gt; Screenshot PNG + DOM centroid (cx, cy) prompt&lt;br&gt;• &lt;b&gt;Output:&lt;/b&gt; 2D binary raster mask M_SAM ∈ {0,1}&lt;sup&gt;H×W&lt;/sup&gt;&lt;br&gt;• &lt;b&gt;Inference Latency:&lt;/b&gt; ~420ms&lt;br&gt;• Senses true optical bounds independent of DOM" vertex="1">
+          <mxGeometry x="20" y="60" width="310" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="card_spark" parent="lane_meta" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#f59e0b&quot; style=&quot;font-size:13px;&quot;&gt;Meta Muse Spark 1.3&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;Triage Engine (muse-spark-1.3)&lt;/font&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;Input:&lt;/b&gt; LCA DOM Subtree + Repository Tree&lt;br&gt;• &lt;b&gt;Contract:&lt;/b&gt; response_format = SparkTriageSchema&lt;br&gt;• &lt;b&gt;Duty:&lt;/b&gt; Isolates 1-2 parent layout files&lt;br&gt;• &lt;b&gt;Shield:&lt;/b&gt; Blacklists atomic UI components&lt;br&gt;• &lt;b&gt;Speed:&lt;/b&gt; 88.5% token prune in ~580ms" vertex="1">
+          <mxGeometry x="20" y="230" width="310" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="card_wonder" parent="lane_meta" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#C084FC;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#c084fc&quot; style=&quot;font-size:13px;&quot;&gt;Meta Muse Wonder 1.0&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;Optical Architect (muse-spark-1.3 wonder)&lt;/font&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;Input:&lt;/b&gt; Red collision overlay crop + CSS specs&lt;br&gt;• &lt;b&gt;Contract:&lt;/b&gt; response_format = RepairSpec (Pydantic)&lt;br&gt;• &lt;b&gt;Diagnosis:&lt;/b&gt; Pinpoints stacking context &amp; flex traps&lt;br&gt;• &lt;b&gt;Output:&lt;/b&gt; Declarative repair strategy &amp; rules&lt;br&gt;• Writes ZERO code to prevent hallucinations" vertex="1">
+          <mxGeometry x="20" y="410" width="310" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="card_code" parent="lane_meta" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#A855F7;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#a855f7&quot; style=&quot;font-size:13px;&quot;&gt;Meta Muse Code 1.3&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:11px;&quot;&gt;Unified Diff Coder (muse-spark-1.3 code)&lt;/font&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;Input:&lt;/b&gt; Target file source + RepairSpec JSON&lt;br&gt;• &lt;b&gt;Output:&lt;/b&gt; Verbatim Unified Diff patch hunk stream&lt;br&gt;• &lt;b&gt;Rules:&lt;/b&gt; Standard CSS flow, Tailwind breakpoint pairs&lt;br&gt;• &lt;b&gt;Performance:&lt;/b&gt; 91% first-pass resolution rate" vertex="1">
+          <mxGeometry x="20" y="600" width="310" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_infra" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#062C22;strokeColor=#34D399;fontColor=#34D399;startSize=40;rounded=1;arcSize=6;fontStyle=1;fontSize=12;shadow=1;collapsible=0;" value="&lt;b&gt;5. SANDBOX &amp; PERSISTENCE&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#34d399&quot; style=&quot;font-size:11px;&quot;&gt;E2B Micro-VM Sandbox &amp; PostgreSQL 16&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1620" y="100" width="520" height="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="card_sandbox" parent="lane_infra" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#064E3B;strokeColor=#10B981;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#34d399&quot; style=&quot;font-size:13px;&quot;&gt;E2B Micro-VM Sandbox / Modal Cloud&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#a7f3d0&quot; style=&quot;font-size:11px;&quot;&gt;backend/sandbox/e2b_executor.py&lt;/font&gt;&lt;br&gt;&lt;br&gt;• Isolated hardware virtualization container per run&lt;br&gt;• &lt;b&gt;Headless Chromium (Playwright):&lt;/b&gt;&lt;br&gt;  - Mobile Viewport: 375 × 812 (Device scale factor 2.0)&lt;br&gt;  - Desktop Viewport: 1440 × 900 (Desktop reference)&lt;br&gt;• &lt;b&gt;Atomic Patch Application:&lt;/b&gt; Applies diff to tree&lt;br&gt;• &lt;b&gt;Hot Module Reload (HMR):&lt;/b&gt; Sub-300ms live refresh&lt;br&gt;• Full network &amp; credential isolation from host" vertex="1">
+          <mxGeometry x="20" y="60" width="480" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="card_db" parent="lane_infra" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#FBBF24;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#fbbf24&quot; style=&quot;font-size:13px;&quot;&gt;PostgreSQL 16 Persistence Store&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#fde68a&quot; style=&quot;font-size:11px;&quot;&gt;backend/db/repository.py &amp; models.py (SQLModel + asyncpg)&lt;/font&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;repositories:&lt;/b&gt; Multi-tenant SaaS config &amp; protected globs JSONB&lt;br&gt;• &lt;b&gt;watched_repository:&lt;/b&gt; Singleton row (id=1) active monitored repo&lt;br&gt;• &lt;b&gt;pr_runs:&lt;/b&gt; FSM state, attempt counts, cost guardrail (&lt;=$0.15)&lt;br&gt;• &lt;b&gt;visual_anomalies:&lt;/b&gt; Bounding boxes, GIN index on lca_dom, math vectors&lt;br&gt;• &lt;b&gt;repair_attempts:&lt;/b&gt; 3-strike audit trail, GIN index on repair_spec&lt;br&gt;• &lt;b&gt;Zero-Dependency Fallback:&lt;/b&gt; artifacts/watched_repo.json when PG offline" vertex="1">
+          <mxGeometry x="20" y="280" width="480" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="card_publish" parent="lane_infra" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#064E3B;strokeColor=#34D399;strokeWidth=1.5;fontColor=#F8FAFC;align=left;spacingLeft=12;fontSize=11;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#34d399&quot; style=&quot;font-size:13px;&quot;&gt;Publishing &amp; Outcome Delivery&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#a7f3d0&quot; style=&quot;font-size:11px;&quot;&gt;backend/core/github_publish.py &amp; github_client.py&lt;/font&gt;&lt;br&gt;&lt;br&gt;• &lt;b&gt;Success Path (H &gt;= 0.98 on both viewports):&lt;/b&gt;&lt;br&gt;  - Direct Git Tree commit to PR branch signed by visorqa-agent[bot]&lt;br&gt;  - Posts rich PR telemetry comment with Before/After mask tables&lt;br&gt;• &lt;b&gt;Fallback Path (Strike 3 Exhausted):&lt;/b&gt;&lt;br&gt;  - Keeps PR branch 100% untouched to prevent breaking code&lt;br&gt;  - Publishes highest-scoring patch as suggested review comment" vertex="1">
+          <mxGeometry x="20" y="510" width="480" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gh_to_wh" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#38BDF8;strokeWidth=2;fontColor=#38BDF8;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" value="1. Webhook (HMAC)" edge="1" source="card_gh_pr" target="card_wh">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_wh_to_orch" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#818CF8;strokeWidth=2;fontColor=#818CF8;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" value="2. Spawns FSM" edge="1" source="card_wh" target="card_orch_hdr">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_orch_to_ws" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6366F1;strokeWidth=2;fontColor=#C7D2FE;fontSize=10;labelBackgroundColor=#0F172A;exitX=0;exitY=0.8;entryX=1;entryY=0.3;" value="WS State Events" edge="1" source="card_orch_hdr" target="card_ws">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_ws_to_ui" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6366F1;strokeWidth=2;fontColor=#C7D2FE;fontSize=10;labelBackgroundColor=#0F172A;exitX=0;exitY=0.7;entryX=1;entryY=0.5;" value="Live State Stream" edge="1" source="card_ws" target="card_next_ui">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_n1_to_sb" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#38BDF8;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.2;entryX=0;entryY=0.3;" value="Dual Playwright Capture" edge="1" source="node_sense" target="card_sandbox">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1240" y="240" />
+              <mxPoint x="1600" y="240" />
+              <mxPoint x="1600" y="200" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_n1_to_sam" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#38BDF8;strokeWidth=2;fontColor=#38BDF8;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" value="Centroid Prompt → M_SAM" edge="1" source="node_sense" target="card_sam">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_n2_to_spark" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#F59E0B;strokeWidth=2;fontColor=#F59E0B;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" value="LCA Tree → Target File" edge="1" source="node_triage" target="card_spark">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_n3_to_wonder" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#C084FC;strokeWidth=2;fontColor=#C084FC;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" value="Mask Crop → RepairSpec" edge="1" source="node_diagnose" target="card_wonder">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_n4_to_code" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#A855F7;strokeWidth=2;fontColor=#A855F7;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" value="Source + Spec → Diff" edge="1" source="node_patch" target="card_code">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_n5_to_sb" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#34D399;strokeWidth=2;fontColor=#34D399;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.5;entryX=0;entryY=0.7;" value="Apply Diff via HMR" edge="1" source="node_verify" target="card_sandbox">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1240" y="680" />
+              <mxPoint x="1600" y="680" />
+              <mxPoint x="1600" y="300" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_strike_retry" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#F59E0B;strokeWidth=2;strokePattern=dashed;fontColor=#F59E0B;fontSize=10;labelBackgroundColor=#0F172A;exitX=0;exitY=0.3;entryX=0;entryY=0.5;" value="Strike 1-2 Retry (H &lt; 0.98)" edge="1" source="card_strike_circuit" target="node_diagnose">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="745" y="930" />
+              <mxPoint x="745" y="475" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_math_to_db" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FBBF24;strokeWidth=1.5;fontColor=#FBBF24;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" value="Persist Anomalies &amp; Scores" edge="1" source="card_math_engine" target="card_db">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1240" y="810" />
+              <mxPoint x="1600" y="810" />
+              <mxPoint x="1600" y="480" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_verify_to_pub" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#34D399;strokeWidth=2;fontColor=#34D399;fontSize=10;labelBackgroundColor=#0F172A;exitX=1;exitY=0.7;entryX=0;entryY=0.5;" value="Resolved / Fallback State" edge="1" source="node_verify" target="card_publish">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1240" y="700" />
+              <mxPoint x="1600" y="700" />
+              <mxPoint x="1600" y="710" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_pub_to_gh" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#34D399;strokeWidth=2;fontColor=#34D399;fontSize=10;labelBackgroundColor=#0F172A;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" value="Auto-Commit Fix or PR Review" edge="1" source="card_publish" target="card_gh_bot">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1880" y="1140" />
+              <mxPoint x="205" y="1140" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arch_legend" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#334155;strokeWidth=1;fontColor=#CBD5E1;align=center;fontSize=11;" value="&lt;b&gt;&lt;font color=&quot;#38bdf8&quot;&gt;━━&lt;/font&gt; Ingress &amp; Webhook Events&lt;/b&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;b&gt;&lt;font color=&quot;#818cf8&quot;&gt;━━&lt;/font&gt; Real-Time WebSocket Pub/Sub Stream&lt;/b&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;b&gt;&lt;font color=&quot;#c084fc&quot;&gt;━━&lt;/font&gt; Meta AI Structured Model Inferences&lt;/b&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;b&gt;&lt;font color=&quot;#f59e0b&quot;&gt;╌╌&lt;/font&gt; 3-Strike Self-Healing Feedback Loop&lt;/b&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;b&gt;&lt;font color=&quot;#34d399&quot;&gt;━━&lt;/font&gt; Sandbox HMR &amp; PR Auto-Commit&lt;/b&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;b&gt;&lt;font color=&quot;#fbbf24&quot;&gt;━━&lt;/font&gt; PostgreSQL 16 Persistence&lt;/b&gt;" vertex="1">
+          <mxGeometry x="40" y="1120" width="2100" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
