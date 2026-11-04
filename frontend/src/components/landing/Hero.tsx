@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { FOCUS, MISSION_CONTROL_URL } from "./shared";
+import { FOCUS, MISSION_CONTROL_URL, DEMO_URL } from "./shared";
 import { ProofPreview } from "./ProofPreview";
 import { cn } from "@/lib/utils";
 
@@ -70,17 +70,28 @@ export function Hero() {
         {/* Action Group */}
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link
-            href={MISSION_CONTROL_URL}
+            href={DEMO_URL}
             className={cn(
-              "group relative flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-black shadow-lg shadow-cyan-500/10 transition-all hover:bg-zinc-100 hover:shadow-cyan-400/25 active:scale-[0.99]",
+              "group relative flex items-center gap-2 rounded-lg bg-laser-cyan px-6 py-3 text-sm font-bold text-black shadow-lg shadow-cyan-500/25 transition-all hover:bg-laser-cyan/90 hover:shadow-cyan-400/40 active:scale-[0.99]",
               FOCUS
             )}
           >
-            <span>Launch Mission Control</span>
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            <span>Live Judge Demo (No Login)</span>
             <ArrowRight
               className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5"
               aria-hidden="true"
             />
+          </Link>
+
+          <Link
+            href={MISSION_CONTROL_URL}
+            className={cn(
+              "group relative flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-text-primary backdrop-blur-sm transition-all hover:bg-white/10 hover:border-white/30 active:scale-[0.99]",
+              FOCUS
+            )}
+          >
+            <span>Launch Mission Control</span>
           </Link>
 
           <a

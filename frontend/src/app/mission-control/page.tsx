@@ -52,8 +52,27 @@ interface GitHubPull {
 }
 
 export default function MissionControlPage() {
-  const { user, loading: authLoading, logout } = useAuth();
+  const { user, loading: authLoading, logout, loginWithConfigured } = useAuth();
   const apiBase = resolveApiBase();
+  const [demoLoggingIn, setDemoLoggingIn] = useState(false);
+
+  // Auto-login if accessed with ?demo=1 or ?demo=true so judges never see a login wall
+  useEffect(() => {
+    if (authLoading || user || demoLoggingIn) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const isDemo = params.get("demo") === "1" || params.get("demo") === "true";
+    if (isDemo) {
+      setDemoLoggingIn(true);
+      loginWithConfigured()
+        .catch((err) => {
+          console.error("Auto demo authentication failed:", err);
+        })
+        .finally(() => {
+          setDemoLoggingIn(false);
+        });
+    }
+  }, [authLoading, user, demoLoggingIn, loginWithConfigured]);
 
   // --- Watched repository (Task 1: DB-persisted singleton, strict scope) ---
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
@@ -459,12 +478,17 @@ export default function MissionControlPage() {
     }
   };
 
-  if (authLoading) {
+  if (authLoading || demoLoggingIn) {
     return (
-      <main className="min-h-screen bg-canvas text-text-primary">
-        <p data-testid="auth-loading" className="px-4 py-10 text-sm text-text-secondary">
-          Checking GitHub session…
-        </p>
+      <main className="min-h-screen bg-canvas text-text-primary flex flex-col items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-6 w-6 animate-spin text-laser-cyan" />
+          <p data-testid="auth-loading" className="font-mono text-sm text-laser-cyan">
+            {demoLoggingIn
+              ? "Launching Judge Demo Environment (Zero-Login Access)…"
+              : "Checking GitHub session…"}
+          </p>
+        </div>
       </main>
     );
   }
