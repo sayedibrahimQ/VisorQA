@@ -82,6 +82,21 @@ async def list_repos(request: Request) -> Any:
         except Exception:
             pass
 
+    # Demo Scope Filter: Only return the test repository (aether-hardware) for judge presentation
+    demo_filtered = [
+        r for r in body
+        if "aether" in (r.get("name") or "").lower() or "aether" in (r.get("full_name") or "").lower()
+    ]
+    if not demo_filtered:
+        st, direct_repo = await github_api("GET", "/repos/sayedibrahimQ/aether-hardware", token)
+        if st == 200 and isinstance(direct_repo, dict):
+            demo_filtered = [direct_repo]
+        elif pat:
+            st2, direct_repo2 = await github_api("GET", "/repos/sayedibrahimQ/aether-hardware", pat)
+            if st2 == 200 and isinstance(direct_repo2, dict):
+                demo_filtered = [direct_repo2]
+    body = demo_filtered
+
     # Sort repos by updated_at descending
     body.sort(key=lambda r: str(r.get("updated_at") or ""), reverse=True)
 
