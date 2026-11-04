@@ -194,22 +194,20 @@ async def github_token_login(payload: TokenLoginRequest) -> Any:
         response = JSONResponse({"user": {**user, "auth_mode": mode}})
         return _create_session(user, token, mode, response)
 
-    # No token supplied: configured GitHub App installation, else env PAT.
+    # No token supplied: prefer env PAT for user credentials (sayedibrahimQ), else GitHub App installation.
+    env_pat = (settings.GITHUB_PAT or "").strip()
+    if env_pat:
+        user = await fetch_github_user(env_pat)
+        if user:
+            response = JSONResponse({"user": {**user, "auth_mode": "pat"}})
+            return _create_session(user, env_pat, "pat", response)
+
     app_token = await app_installation_token()
     if app_token:
         user = {"login": "github-app[bot]", "name": "GitHub App Installation",
                 "avatar_url": "", "html_url": ""}
         response = JSONResponse({"user": {**user, "auth_mode": "github_app"}})
         return _create_session(user, app_token, "github_app", response)
-
-    env_pat = (settings.GITHUB_PAT or "").strip()
-    if env_pat:
-        user = await fetch_github_user(env_pat)
-        if not user:
-            return JSONResponse({"detail": "Configured GITHUB_PAT was rejected by GitHub"},
-                                status_code=401)
-        response = JSONResponse({"user": {**user, "auth_mode": "pat"}})
-        return _create_session(user, env_pat, "pat", response)
 
     return JSONResponse(
         {"detail": "No GitHub credentials configured (set GITHUB_PAT or the GitHub App, "
