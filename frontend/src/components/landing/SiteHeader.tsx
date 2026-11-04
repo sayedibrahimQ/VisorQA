@@ -3,8 +3,8 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Menu, Star, X } from "lucide-react";
-import { FOCUS, MISSION_CONTROL_URL, REPO_URL } from "./shared";
+import { ArrowRight, Menu, Sparkles, Star, X } from "lucide-react";
+import { FOCUS, MISSION_CONTROL_URL, REPO_URL, DEMO_URL } from "./shared";
 import { cn } from "@/lib/utils";
 
 export const NAV_LINKS = [
@@ -118,6 +118,16 @@ export function SiteHeader() {
 
         {/* Desktop CTA actions */}
         <div className="hidden items-center gap-3 md:flex">
+          <Link
+            href={DEMO_URL}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md border border-laser-cyan/50 bg-laser-cyan/15 px-3 py-1.5 font-mono text-xs font-semibold text-laser-cyan shadow-[0_0_12px_rgba(0,240,255,0.2)] transition-all hover:bg-laser-cyan hover:text-black",
+              FOCUS
+            )}
+          >
+            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Judge Demo</span>
+          </Link>
           <a
             href={REPO_URL}
             target="_blank"
@@ -148,6 +158,15 @@ export function SiteHeader() {
 
         {/* Mobile Hamburger Toggle */}
         <div className="flex items-center gap-2 md:hidden">
+          <Link
+            href={DEMO_URL}
+            className={cn(
+              "rounded-md border border-laser-cyan/50 bg-laser-cyan/15 px-2.5 py-1 font-mono text-xs font-semibold text-laser-cyan",
+              FOCUS
+            )}
+          >
+            Demo
+          </Link>
           <Link
             href={MISSION_CONTROL_URL}
             className={cn(
@@ -204,6 +223,14 @@ export function SiteHeader() {
               )
             )}
             <div className="mt-3 flex flex-col gap-2 pt-3 border-t border-border-subtle">
+              <Link
+                href={DEMO_URL}
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center justify-center gap-1.5 rounded-md border border-laser-cyan/50 bg-laser-cyan/15 py-2 font-mono text-xs font-semibold text-laser-cyan shadow-[0_0_12px_rgba(0,240,255,0.2)]"
+              >
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Judge Demo (No Login)</span>
+              </Link>
               <a
                 href={REPO_URL}
                 target="_blank"

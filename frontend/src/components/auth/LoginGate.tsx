@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Github, KeyRound, Loader2 } from "lucide-react";
+import { Github, KeyRound, Loader2, Sparkles } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 /** Darkroom sign-in screen shown when no GitHub session exists. */
@@ -16,6 +16,50 @@ export function LoginGate() {
       className="flex min-h-[60vh] items-center justify-center px-4"
     >
       <div className="w-full max-w-sm rounded-lg border border-border-subtle bg-surface p-6 shadow-2xl">
+        {/* --- JUDGE 1-CLICK DEMO ACCESS (ZERO LOGIN) --- */}
+        <div className="mb-5 rounded-lg border border-laser-cyan/40 bg-laser-cyan/10 p-3.5 text-center shadow-[0_0_15px_rgba(0,240,255,0.15)]">
+          <div className="flex items-center justify-center gap-1.5 font-mono text-xs font-semibold uppercase tracking-wider text-laser-cyan">
+            <Sparkles className="h-4 w-4 text-laser-cyan" aria-hidden="true" />
+            <span>Judge Evaluation Mode</span>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-zinc-300">
+            No personal GitHub account or token required. Enter with pre-configured judge credentials on <span className="font-mono text-laser-cyan">sayedibrahimQ/aether-hardware</span>.
+          </p>
+          <button
+            type="button"
+            data-testid="login-judge-demo"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await loginWithConfigured();
+                const url = new URL(window.location.href);
+                url.searchParams.set("demo", "1");
+                window.history.replaceState(null, "", url.toString());
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-md bg-laser-cyan px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-black shadow-md shadow-cyan-500/25 transition-all hover:bg-cyan-300 hover:shadow-cyan-400/35 active:scale-[0.99] disabled:opacity-60"
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            Enter Live Demo (No Login)
+          </button>
+        </div>
+
+        <div className="relative my-4 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border-subtle" />
+          </div>
+          <span className="relative bg-surface px-2 text-[10px] uppercase tracking-wider text-text-muted">
+            Or Sign In With Your Account
+          </span>
+        </div>
+
         <div className="flex items-center gap-2">
           <Github className="h-6 w-6 text-text-primary" aria-hidden="true" />
           <h2 className="font-display text-lg font-semibold text-text-primary">
