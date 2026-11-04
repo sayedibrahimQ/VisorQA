@@ -137,6 +137,12 @@ npm install
 npm run dev
 ```
 
+#### Dual-Mode Sandbox Execution & Zero-Credential Local Fallback
+
+VisorQA implements a unified `SandboxRunner` abstraction with two interchangeable engines:
+- **Cloud Micro-VM Mode (`SANDBOX_PROVIDER=e2b`):** When `E2B_API_KEY` is configured, each PR scan provisions an isolated Ubuntu 22.04 cloud micro-VM in <1.5s, connects through authenticated `e2b-traffic-access-token` tunnels, and hot-reloads synthesized patches in <300ms.
+- **Local Worktree Fallback (`SANDBOX_PROVIDER=local`):** When running locally or when `E2B_API_KEY` is omitted, VisorQA automatically and seamlessly falls back to the **Local Isolated Git Worktree Sandbox Runner** (`LocalWorktreeRunner`). It creates isolated per-run worktrees under `/tmp/visorqa_sandboxes`, runs the local dev server, applies unified diffs in memory, and captures headless Chromium screenshots via Playwright with **zero cloud costs and zero external credentials required**.
+
 ---
 
 ### 4. Single Self-Contained Repository Architecture
@@ -527,7 +533,7 @@ VisorQA executes all browser automation, dev server builds, and hot reloads insi
 2. **True Kernel-Level Isolation:** Each pull request runs in its own micro-VM with dedicated filesystem and memory namespaces. Malicious repository code can never touch host infrastructure.
 3. **Sub-300ms HMR Reloads:** Patches synthesized by Muse Code are streamed directly into the E2B container filesystem. The active dev server hot-reloads in `< 300ms`, enabling rapid re-segmentation without restarting the application.
 4. **Secure Traffic Tunneling:** E2B preview endpoints (`*.e2b.dev`) are authenticated via `e2b-traffic-access-token` request headers, ensuring preview instances are accessible only to the VisorQA test harness.
-5. **Fast Local Worktree Fallback:** For offline local development and deterministic unit testing, VisorQA provides a shared `SandboxRunner` interface backed by a local Git worktree runner.
+5. **Seamless Local Worktree Fallback:** If `E2B_API_KEY` is not supplied or cloud networking is offline, VisorQA automatically falls back to its local Git worktree runner (`LocalWorktreeRunner`). This clones the target commit into an ephemeral worktree directory (`/tmp/visorqa_sandboxes/<run-id>`), starts a localized dev server, and executes Playwright tests deterministically with 100% feature parity and zero cloud costs.
 
 ---
 
