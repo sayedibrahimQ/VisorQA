@@ -7,8 +7,8 @@ import {
   CheckCircle2,
   ExternalLink,
   GitPullRequest,
+  ScanEye,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { FOCUS, MISSION_CONTROL_URL, DEMO_URL } from "./shared";
 import { ProofPreview } from "./ProofPreview";
@@ -72,12 +72,11 @@ export function Hero() {
           <Link
             href={DEMO_URL}
             className={cn(
-              "group relative flex items-center gap-2 rounded-lg bg-laser-cyan px-6 py-3 text-sm font-bold text-black shadow-lg shadow-cyan-500/25 transition-all hover:bg-laser-cyan/90 hover:shadow-cyan-400/40 active:scale-[0.99]",
+              "group relative flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-black shadow-sm transition-all hover:bg-zinc-200 active:scale-[0.99]",
               FOCUS
             )}
           >
-            <Sparkles className="h-4 w-4" aria-hidden="true" />
-            <span>Live Judge Demo (No Login)</span>
+            <span>Live Demo</span>
             <ArrowRight
               className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5"
               aria-hidden="true"
@@ -87,11 +86,11 @@ export function Hero() {
           <Link
             href={MISSION_CONTROL_URL}
             className={cn(
-              "group relative flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-text-primary backdrop-blur-sm transition-all hover:bg-white/10 hover:border-white/30 active:scale-[0.99]",
+              "group relative flex items-center gap-2 rounded-lg border border-border-subtle bg-surface px-5 py-3 text-sm font-medium text-text-primary backdrop-blur-sm transition-all hover:bg-elevated hover:border-border-strong active:scale-[0.99]",
               FOCUS
             )}
           >
-            <span>Launch Mission Control</span>
+            <span>Mission Control</span>
           </Link>
 
           <a
@@ -99,11 +98,11 @@ export function Hero() {
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
-              "flex items-center gap-2 rounded-lg border border-white/10 bg-surface/80 px-5 py-3 text-sm font-medium text-text-secondary backdrop-blur-sm transition-all hover:border-white/25 hover:bg-elevated hover:text-text-primary active:scale-[0.99]",
+              "flex items-center gap-2 rounded-lg border border-border-subtle bg-surface px-5 py-3 text-sm font-medium text-text-secondary backdrop-blur-sm transition-all hover:border-border-strong hover:bg-elevated hover:text-text-primary active:scale-[0.99]",
               FOCUS
             )}
           >
-            <GitPullRequest className="h-4 w-4 text-cyan-400" aria-hidden="true" />
+            <GitPullRequest className="h-4 w-4 text-text-secondary" aria-hidden="true" />
             <span>Inspect Live PR #3</span>
             <ExternalLink className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
           </a>
@@ -117,7 +116,7 @@ export function Hero() {
           </div>
           <span className="text-border-strong select-none">·</span>
           <div className="flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+            <ScanEye className="h-3.5 w-3.5 text-text-secondary" />
             <span>Zero Spatial Hallucinations (SAM 3.1)</span>
           </div>
           <span className="text-border-strong select-none">·</span>

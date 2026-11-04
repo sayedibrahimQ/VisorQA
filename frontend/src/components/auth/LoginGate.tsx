@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Github, KeyRound, Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, Github, KeyRound, Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 /** Darkroom sign-in screen shown when no GitHub session exists. */
@@ -16,14 +16,18 @@ export function LoginGate() {
       className="flex min-h-[60vh] items-center justify-center px-4"
     >
       <div className="w-full max-w-sm rounded-lg border border-border-subtle bg-surface p-6 shadow-2xl">
-        {/* --- JUDGE 1-CLICK DEMO ACCESS (ZERO LOGIN) --- */}
-        <div className="mb-5 rounded-lg border border-laser-cyan/40 bg-laser-cyan/10 p-3.5 text-center shadow-[0_0_15px_rgba(0,240,255,0.15)]">
-          <div className="flex items-center justify-center gap-1.5 font-mono text-xs font-semibold uppercase tracking-wider text-laser-cyan">
-            <Sparkles className="h-4 w-4 text-laser-cyan" aria-hidden="true" />
-            <span>Judge Evaluation Mode</span>
+        {/* --- DEMO ACCESS (ZERO LOGIN) --- */}
+        <div className="mb-5 rounded-lg border border-border-strong bg-elevated p-4">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-primary">
+              Demo Access
+            </span>
+            <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-text-muted">
+              Pre-configured
+            </span>
           </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-zinc-300">
-            No personal GitHub account or token required. Enter with pre-configured judge credentials on <span className="font-mono text-laser-cyan">sayedibrahimQ/aether-hardware</span>.
+          <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
+            Launch directly into Mission Control using test environment credentials on <span className="font-mono text-text-primary">sayedibrahimQ/aether-hardware</span> without signing in.
           </p>
           <button
             type="button"
@@ -40,14 +44,14 @@ export function LoginGate() {
                 setBusy(false);
               }
             }}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-md bg-laser-cyan px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-black shadow-md shadow-cyan-500/25 transition-all hover:bg-cyan-300 hover:shadow-cyan-400/35 active:scale-[0.99] disabled:opacity-60"
+            className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-md bg-white px-4 py-2.5 text-xs font-semibold text-black transition-all hover:bg-zinc-200 active:scale-[0.99] disabled:opacity-60 shadow-sm"
           >
             {busy ? (
-              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
             ) : (
-              <Sparkles className="h-4 w-4" />
+              <ArrowRight className="h-3.5 w-3.5" />
             )}
-            Enter Live Demo (No Login)
+            <span>Enter Live Demo</span>
           </button>
         </div>
 

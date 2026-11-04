@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ScanEye, CheckCircle2, ExternalLink, Loader2, Sparkles } from "lucide-react";
+import { ScanEye, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   resolveApiBase,
@@ -482,11 +482,11 @@ export default function MissionControlPage() {
     return (
       <main className="min-h-screen bg-canvas text-text-primary flex flex-col items-center justify-center p-6">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-6 w-6 animate-spin text-laser-cyan" />
-          <p data-testid="auth-loading" className="font-mono text-sm text-laser-cyan">
+          <Loader2 className="h-5 w-5 animate-spin text-text-secondary" />
+          <p data-testid="auth-loading" className="font-mono text-xs text-text-secondary">
             {demoLoggingIn
-              ? "Launching Judge Demo Environment (Zero-Login Access)…"
-              : "Checking GitHub session…"}
+              ? "Initializing demo environment…"
+              : "Checking session…"}
           </p>
         </div>
       </main>
@@ -599,16 +599,15 @@ export default function MissionControlPage() {
           </div>
         </div>
 
-        {/* --- JUDGE GUIDED DEMO JOURNEY BAR --- */}
+        {/* --- DEMO WORKFLOW BAR --- */}
         <div
           data-testid="judge-demo-bar"
-          className="shrink-0 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-laser-cyan/40 bg-surface-subtle p-3 shadow-sm transition-all"
+          className="shrink-0 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 shadow-sm transition-all"
         >
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 rounded-full bg-laser-cyan animate-pulse" />
-              <span className="font-mono text-xs font-semibold uppercase tracking-wider text-laser-cyan">
-                Judge Demo Journey
+              <span className="rounded bg-elevated border border-border-strong px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-text-primary">
+                Demo Workflow
               </span>
             </div>
 
@@ -617,25 +616,25 @@ export default function MissionControlPage() {
               href={`https://github.com/${selectedRepo || "sayedibrahimQ/aether-hardware"}/pulls`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1.5 font-mono text-[11px] text-text-secondary hover:text-text-primary transition-colors border border-border-subtle rounded px-2.5 py-1 bg-surface"
+              className="inline-flex items-center gap-1.5 font-mono text-xs text-text-secondary hover:text-text-primary transition-colors border border-border-subtle rounded-md px-2.5 py-1 bg-canvas hover:border-border-strong"
               title="Verify repo has 0 open PRs on GitHub"
             >
               <span>1. Check GitHub Repo (0 PRs)</span>
-              <ExternalLink className="h-3 w-3" />
+              <ExternalLink className="h-3 w-3 text-text-muted" />
             </a>
 
             <button
               type="button"
               onClick={handleResetDemoSlate}
               disabled={demoBusy}
-              className="font-mono text-[10px] text-text-muted hover:text-text-secondary underline"
+              className="font-mono text-[11px] text-text-muted hover:text-text-secondary transition-colors"
               title="Close open PRs on GitHub to guarantee a clean slate"
             >
-              {demoBusy ? "Resetting…" : "Reset Slate (0 PRs)"}
+              {demoBusy ? "Resetting…" : "Reset Slate"}
             </button>
 
             {demoMessage ? (
-              <span className="font-mono text-[11px] text-laser-cyan/90 truncate max-w-md">
+              <span className="font-mono text-xs text-text-secondary truncate max-w-md border-l border-border-subtle pl-3">
                 {demoMessage}
               </span>
             ) : null}
@@ -648,28 +647,26 @@ export default function MissionControlPage() {
               data-testid="push-buggy-branch-btn"
               onClick={handlePushBuggyBranch}
               disabled={demoBusy}
-              className="inline-flex items-center gap-1.5 rounded-md bg-laser-cyan px-3.5 py-1.5 font-mono text-xs font-bold text-black transition-all hover:bg-laser-cyan/90 hover:shadow-[0_0_15px_rgba(0,229,255,0.4)] disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-md bg-white px-3.5 py-1.5 font-mono text-xs font-semibold text-black transition-all hover:bg-zinc-200 active:scale-[0.99] disabled:opacity-50 shadow-sm"
             >
               {demoBusy ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="h-3.5 w-3.5" />
-              )}
-              <span>2. Push Buggy Branch &amp; Open PR</span>
+              ) : null}
+              <span>2. Push Buggy Branch &amp; Trigger PR</span>
             </button>
 
-            {/* Step 4: When resolved, show prominent Inspect Healed PR button */}
+            {/* Step 4: When resolved, show Inspect Healed PR button */}
             {scopedActiveRun?.status === "RESOLVED" && scopedActiveRun.pr_number ? (
               <a
                 data-testid="inspect-healed-pr-btn"
                 href={`https://github.com/${selectedRepo || "sayedibrahimQ/aether-hardware"}/pull/${scopedActiveRun.pr_number}`}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md border border-verified-emerald bg-verified-emerald/20 px-3.5 py-1.5 font-mono text-xs font-bold text-verified-emerald hover:bg-verified-emerald/30 transition-all shadow-[0_0_12px_rgba(0,245,155,0.3)] animate-pulse"
+                className="inline-flex items-center gap-1.5 rounded-md border border-white/20 bg-elevated px-3.5 py-1.5 font-mono text-xs font-semibold text-text-primary hover:bg-surface-overlay hover:border-white/40 transition-all shadow-sm"
               >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>✓ 4. Inspect Healed PR #{scopedActiveRun.pr_number} on GitHub</span>
-                <ExternalLink className="h-3.5 w-3.5" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-verified-emerald" />
+                <span>Inspect Healed PR #{scopedActiveRun.pr_number}</span>
+                <ExternalLink className="h-3 w-3 text-text-muted" />
               </a>
             ) : null}
           </div>

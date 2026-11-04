@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Menu, Sparkles, Star, X } from "lucide-react";
+import { ArrowRight, Menu, Star, X } from "lucide-react";
 import { FOCUS, MISSION_CONTROL_URL, REPO_URL, DEMO_URL } from "./shared";
 import { cn } from "@/lib/utils";
 
@@ -117,17 +117,7 @@ export function SiteHeader() {
         </nav>
 
         {/* Desktop CTA actions */}
-        <div className="hidden items-center gap-3 md:flex">
-          <Link
-            href={DEMO_URL}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md border border-laser-cyan/50 bg-laser-cyan/15 px-3 py-1.5 font-mono text-xs font-semibold text-laser-cyan shadow-[0_0_12px_rgba(0,240,255,0.2)] transition-all hover:bg-laser-cyan hover:text-black",
-              FOCUS
-            )}
-          >
-            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>Judge Demo</span>
-          </Link>
+        <div className="hidden items-center gap-2.5 md:flex">
           <a
             href={REPO_URL}
             target="_blank"
@@ -142,17 +132,26 @@ export function SiteHeader() {
             <span>Star</span>
           </a>
           <Link
-            href={MISSION_CONTROL_URL}
+            href={DEMO_URL}
             className={cn(
-              "group relative flex items-center gap-1.5 overflow-hidden rounded-md bg-text-primary px-3.5 py-1.5 text-sm font-medium text-canvas shadow-sm transition-all hover:bg-white hover:shadow-cyan-500/10",
+              "group relative flex items-center gap-1.5 rounded-md bg-white px-3.5 py-1.5 text-xs font-semibold text-black shadow-sm transition-all hover:bg-zinc-200 active:scale-[0.99]",
               FOCUS
             )}
           >
-            <span>Open Mission Control</span>
+            <span>Live Demo</span>
             <ArrowRight
-              className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5"
+              className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5"
               aria-hidden="true"
             />
+          </Link>
+          <Link
+            href={MISSION_CONTROL_URL}
+            className={cn(
+              "rounded-md border border-border-subtle bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary transition-all hover:border-border-strong hover:text-text-primary",
+              FOCUS
+            )}
+          >
+            <span>Mission Control</span>
           </Link>
         </div>
 
@@ -161,7 +160,7 @@ export function SiteHeader() {
           <Link
             href={DEMO_URL}
             className={cn(
-              "rounded-md border border-laser-cyan/50 bg-laser-cyan/15 px-2.5 py-1 font-mono text-xs font-semibold text-laser-cyan",
+              "rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-black shadow-sm",
               FOCUS
             )}
           >
@@ -170,11 +169,11 @@ export function SiteHeader() {
           <Link
             href={MISSION_CONTROL_URL}
             className={cn(
-              "rounded-md bg-text-primary px-2.5 py-1 text-xs font-medium text-canvas",
+              "rounded-md border border-border-subtle bg-surface px-2.5 py-1 text-xs font-medium text-text-secondary",
               FOCUS
             )}
           >
-            Launch
+            App
           </Link>
           <button
             type="button"
@@ -226,10 +225,17 @@ export function SiteHeader() {
               <Link
                 href={DEMO_URL}
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-center gap-1.5 rounded-md border border-laser-cyan/50 bg-laser-cyan/15 py-2 font-mono text-xs font-semibold text-laser-cyan shadow-[0_0_12px_rgba(0,240,255,0.2)]"
+                className="flex items-center justify-center gap-1.5 rounded-md bg-white py-2 text-xs font-semibold text-black shadow-sm"
               >
-                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Judge Demo (No Login)</span>
+                <span>Live Demo (No Login)</span>
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+              <Link
+                href={MISSION_CONTROL_URL}
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center justify-center gap-1.5 rounded-md border border-border-subtle bg-surface py-2 text-xs font-medium text-text-secondary hover:text-text-primary"
+              >
+                <span>Open Mission Control</span>
               </Link>
               <a
                 href={REPO_URL}
@@ -240,14 +246,6 @@ export function SiteHeader() {
                 <Star className="h-3.5 w-3.5 text-triage-amber" aria-hidden="true" />
                 <span>Star on GitHub</span>
               </a>
-              <Link
-                href={MISSION_CONTROL_URL}
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-center gap-1.5 rounded-md bg-text-primary py-2 text-sm font-medium text-canvas"
-              >
-                <span>Open Mission Control</span>
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
             </div>
           </nav>
         </div>

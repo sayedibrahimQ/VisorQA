@@ -34,9 +34,9 @@ export default function DemoLandingRoute() {
   return (
     <main className="min-h-screen bg-canvas text-text-primary flex flex-col items-center justify-center p-6">
       <div className="flex flex-col items-center gap-3">
-        <Loader2 className="h-6 w-6 animate-spin text-laser-cyan" />
-        <p className="font-mono text-sm text-laser-cyan">
-          Launching Judge Demo Environment (Zero-Login Access)…
+        <Loader2 className="h-5 w-5 animate-spin text-text-secondary" />
+        <p className="font-mono text-xs text-text-secondary">
+          Initializing demo session…
         </p>
       </div>
     </main>
