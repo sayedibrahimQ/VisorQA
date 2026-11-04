@@ -100,7 +100,7 @@ The system architecture diagram visualizes the end-to-end, event-driven, closed-
 - **Primary Human Actors:**
   - **Frontend Developer / PR Author:** Pushes code, opens PRs, reviews autonomous fixes.
   - **QA Lead / Reviewer / Tech Lead:** Monitors live Mission Control, inspects mask overlays, reviews math scorecards, and sets layout tolerances.
-  - **DevOps / System Administrator:** Manages GitHub App secrets, configures watched repositories, defines budget caps ($0.15/PR), and monitors system health.
+  - **DevOps / System Administrator:** Manages GitHub App secrets, configures watched repositories, defines budget caps ($0.05 min – $0.15 max / PR), and monitors system health.
 - **Secondary / External System Actors:**
   - **GitHub Platform:** Delivers webhook events, authenticates bot requests, accepts git commits, and renders PR comments.
   - **Meta AI Models API:** Serves SAM 3.1 segmentation, Spark LCA triage, Wonder optical diagnosis, and Code patch synthesis.
@@ -181,7 +181,7 @@ The system architecture diagram visualizes the end-to-end, event-driven, closed-
 - **`is_resolved`** (`BOOLEAN`, INDEX, DEFAULT `FALSE`): Successfully healed flag.
 - **`healed_commit_sha`** (`VARCHAR(64)`, NULLABLE): Commit hash generated on auto-commit.
 - **`total_latency_ms`** (`INT`, DEFAULT `0`): End-to-end execution duration.
-- **`total_cost_usd`** (`NUMERIC(6,4)`, CHECK `total_cost_usd <= 0.15`): Unit economics safety guardrail.
+- **`total_cost_usd`** (`NUMERIC(6,4)`, CHECK `total_cost_usd <= 0.15`): Unit economics safety guardrail ($0.05 min single-pass, $0.15 max ceiling per PR).
 - **`created_at`** (`TIMESTAMPTZ`, DEFAULT `NOW()`): Run initiation timestamp.
 - **`updated_at`** (`TIMESTAMPTZ`, DEFAULT `NOW()`): Last stage transition timestamp.
 - *Covering Index:* `idx_pr_runs_dashboard_covering` on `(repo_full_name, created_at DESC)` for sub-millisecond dashboard queries.

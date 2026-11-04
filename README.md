@@ -183,7 +183,9 @@ VisorQA is powered **100% by Meta AI Foundation Models** (`https://api.meta.ai/v
 | **04 PATCH** | **Meta Muse Code** | `RepairSpec` JSON + Target file AST | — | **1.9s** | < \$0.006 |
 | **05 VERIFY** | **Meta SAM 3.1** | Sandbox re-render + dual-viewport re-segmentation | — | **1.8s** | < \$0.010 |
 | **E2B Micro-VM** | Cloud Sandbox | Ubuntu 22.04 + Node 20 Dev Server | — | **< 1.5s boot, < 300ms HMR** | < \$0.005 |
-| **Total Pipeline** | **100% Meta AI** | **Closed-loop PR detection $\rightarrow$ verification $\rightarrow$ commit** | **Overall** | **~15 – 35s** | **< \$0.045 / run** |
+| **Total Pipeline** | **100% Meta AI** | **Closed-loop PR detection $\rightarrow$ verification $\rightarrow$ commit** | **Overall** | **~15 – 35s** | **\$0.05 min – \$0.15 max / PR** |
+
+> **Unit Economics:** Single-pass resolutions complete for ~$0.05 per PR (minimum cost). Even across complex 3-strike self-healing feedback cycles, total inference cost is strictly bound to a maximum of $0.15 per PR via PostgreSQL database CHECK constraints.
 
 ---
 
@@ -309,7 +311,7 @@ A pull request run is declared `RESOLVED` if and only if $H \ge 0.98$ on both th
 │                                                      │                                     │                           │
 │                                                      ▼                                     ▼                           │
 │                                        3-Strike Self-Healing Loop                Disk Artifact Store                   │
-│                                      (max_attempts = 3, cost < $0.15)         (JSON Telemetry + Raw Mask PNGs)         │
+│                                      (max_attempts = 3, cost: $0.05 - $0.15)  (JSON Telemetry + Raw Mask PNGs)         │
 └──────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┘
                                                        │
          ┌─────────────────────────────────────────────┴────────────────────────────────────────────┐
@@ -735,7 +737,7 @@ ALTER TABLE repair_attempts ADD CONSTRAINT chk_repair_attempts_no_hacks
 | Rule ID | Business Rule | Enforcement Mechanism |
 | :--- | :--- | :--- |
 | **BR-1** | **3-Strike Self-Healing Cap** | PostgreSQL `chk_pr_runs_3_strike_cap` + FSM counter guard. |
-| **BR-2** | **Inference Cost Guardrail ($0.15/run)** | Database CHECK constraint on `total_cost_usd`. |
+| **BR-2** | **Inference Cost Guardrail ($0.05 min – $0.15 max / PR)** | Database CHECK constraint on `total_cost_usd` (hard $0.15 ceiling). |
 | **BR-3** | **Cross-Viewport Zero Regression** | Verification passes only if $H \ge 0.98$ on **both** $375\text{px}$ and $1440\text{px}$ simultaneously. |
 | **BR-4** | **Anti-Hack CSS Policy** | Database CHECK constraint rejecting `!important` and `z-index: 9999`. |
 | **BR-5** | **Protected UI Primitives** | Glob exclusion preventing direct mutations to `src/components/ui/*`. |

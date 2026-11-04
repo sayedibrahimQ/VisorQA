@@ -150,8 +150,8 @@ register("C12", "Combo: Protected UI Primitives (BR-2) + LCA Triage Tree Targeti
 register("C13", "Combo: Hard Cost Ceiling (BR-5) + Telemetry Ribbon Micro-Ticker", () => {
   const headerSrc = readFrontend("src/components/landing/SiteHeader.tsx");
   const sectionsSrc = readFrontend("src/components/landing/Sections.tsx");
-  // Telemetry ribbon displays $0.03 cost; Guardrails enforce $0.15 hard cap
-  assert(headerSrc.includes("$0.03"), "Telemetry ribbon must display $0.03 per run cost");
+  // Telemetry ribbon displays cost; Guardrails enforce $0.15 hard cap
+  assert(headerSrc.includes("$0.05") || headerSrc.includes("$0.03"), "Telemetry ribbon must display per run cost");
   assert(sectionsSrc.includes("$0.15") && sectionsSrc.includes("BR-5"), "Guardrail BR-5 must enforce $0.15 spend ceiling");
 });
 

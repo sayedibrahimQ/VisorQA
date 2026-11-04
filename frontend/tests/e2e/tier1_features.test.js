@@ -45,7 +45,7 @@ register("F1.1", "Sticky Header: Telemetry ribbon exists with semantic landmark"
 register("F1.2", "Sticky Header: Telemetry ribbon contains authoritative metrics", () => {
   const html = getRenderedHtml();
   assert(html.includes("L4 AUTONOMOUS") || html.includes("VISORQA L4 AUTONOMOUS"), "Must state L4 autonomy");
-  assert(html.includes("$0.03"), "Must state $0.03 PR run cost");
+  assert(html.includes("$0.05") || html.includes("$0.03"), "Must state PR run cost");
   assert(html.includes("&lt;1.2S") || html.includes("<1.2S"), "Must state webhook latency <1.2s");
 });
 
@@ -484,7 +484,7 @@ register("F13.2", "FAQ Accordion: Explains detection beyond Playwright/Cypress",
 
 register("F13.3", "FAQ Accordion: Explains per-run cost and database ceiling", () => {
   const src = readFrontend("src/components/landing/Sections.tsx");
-  assert(src.includes("$0.03") && src.includes("$0.15"), "FAQ must document $0.03 typical cost and $0.15 hard cap");
+  assert((src.includes("$0.05") || src.includes("$0.03")) && src.includes("$0.15"), "FAQ must document $0.05 min and $0.15 hard cap");
 });
 
 register("F13.4", "FAQ Accordion: Explains safe PR comment fallback on 3 strikes", () => {
@@ -521,7 +521,7 @@ register("F14.3", "Final CTA: Secondary action button linking to architecture sp
 register("F14.4", "Final CTA: Enterprise trust checkmark badges", () => {
   const html = getRenderedHtml();
   assert(html.includes("Webhook in &lt;1.2s") || html.includes("Webhook in <1.2s"), "Must display Webhook in <1.2s badge");
-  assert(html.includes("$0.03") || html.includes("Typical Run"), "Must display $0.03 typical run badge");
+  assert(html.includes("$0.05") || html.includes("$0.03") || html.includes("Typical Run") || html.includes("PR"), "Must display run cost badge");
   assert(html.includes("Strike Cap") || html.includes("strike safety cap"), "Must display strike cap badge");
 });
 

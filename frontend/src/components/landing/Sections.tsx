@@ -139,11 +139,11 @@ export function Metrics() {
         "Lowest Common Ancestor traversal prunes context from ~28,000 to ~3,200 tokens per run.",
     },
     {
-      value: "Max 3x / $0.03",
+      value: "$0.05 min – $0.15 max",
       chip: "DETERMINISTIC GUARDRAIL",
       label: "Bounded Self-Healing",
       detail:
-        "Hard-capped 3-strike retry loop with $0.03 average PR spend ($0.15 database-enforced ceiling).",
+        "Hard-capped 3-strike retry loop with $0.05 min to $0.15 max per PR ($0.15 database-enforced ceiling).",
     },
   ];
 
@@ -703,9 +703,9 @@ const GUARDRAILS = [
     body: "Synthesized patches containing !important, z-index: 9999 escalations, or content-hiding shortcuts are screened out and rejected by database CHECK constraints.",
   },
   {
-    title: "Hard cost ceiling ($0.15/run)",
+    title: "Bounded unit cost ($0.05 min – $0.15 max)",
     rule: "BR-5",
-    body: "Each run is hard-capped at $0.15 of model spend, enforced as a database constraint. Typical runs complete for ~$0.03, eliminating runaway spend risks.",
+    body: "Each run is bounded between $0.05 min and $0.15 max per PR, enforced as a database constraint ($0.15 hard ceiling). Single-pass resolutions complete for $0.05, eliminating runaway spend risks.",
   },
   {
     title: "Signed, verified webhooks",
@@ -780,7 +780,7 @@ const FAQS = [
   },
   {
     q: "What are the compute and API costs per pull request?",
-    a: "Because VisorQA prompts SAM 3.1 with 25–40 DOM center coordinates rather than 4,096 blind grid points, and Muse Spark prunes context tokens by 88.5%, a typical PR run consumes ~3,200 tokens and costs an average of $0.03 in compute and model spend. Furthermore, each run has a hard PostgreSQL CHECK constraint capping total spend at $0.15 USD.",
+    a: "Because VisorQA prompts SAM 3.1 with 25–40 DOM center coordinates rather than 4,096 blind grid points, and Muse Spark prunes context tokens by 88.5%, a typical PR run consumes ~3,200 tokens and costs between $0.05 min and $0.15 max in compute and model spend ($0.05 for single-pass resolution, hard-capped at $0.15 USD max across retries via a PostgreSQL CHECK constraint).",
   },
 ];
 
@@ -873,7 +873,7 @@ export function FinalCta() {
           {[
             "HMAC-SHA256 Webhook",
             "Webhook in <1.2s",
-            "$0.03 Typical Run",
+            "$0.05 min – $0.15 max / PR",
             "Max 3x Strike Cap",
             "Zero Hallucination Math",
           ].map((item) => (

@@ -89,7 +89,7 @@
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| [VisorQA]  PR #42: feat/checkout-banner (branch: fix/ui)     [WS: LIVE ●] [Latency: 8.4s] [$0.03]|
+| [VisorQA]  PR #42: feat/checkout-banner               [WS: LIVE ●] [8.4s] [$0.05 min - $0.15 max]|
 +------------------+------------------------------------------------------------+------------------+
 | PR RUNS STREAM   | 1.SENSE(SAM) ──> 2.TRIAGE(Spark) ──> 3.DIAGNOSE ──> 4.PATCH ──> 5.VERIFY(1/3) |
 | (Width: 260px)   +------------------------------------------------------------+------------------+
@@ -180,7 +180,7 @@
 
 | State | Visual Behavior & Micro-Interactions |
 | --- | --- |
-| **1. Empty / Idle State (Listening for Webhook)** | Monochrome minimal canvas displaying a subtle pulsing radar dot (`#FAFAFA`) with text: *"Listening for GitHub Pull Request Webhooks..."* and a summary of sprint capacity saved (`28.4%`) and average PR cost (`$0.03`).
+| **1. Empty / Idle State (Listening for Webhook)** | Monochrome minimal canvas displaying a subtle pulsing radar dot (`#FAFAFA`) with text: *"Listening for GitHub Pull Request Webhooks..."* and a summary of sprint capacity saved (`28.4%`) and PR cost profile (`$0.05 min – $0.15 max per PR`).
 
  |
 | **2. Loading / Active Node Streaming** | Active FSM node border illuminates with `ai-harmony-gradient`. While SAM 3.1 segments the page (`0.45s`), a subtle horizontal laser scanline sweeps once across the viewport screenshot.

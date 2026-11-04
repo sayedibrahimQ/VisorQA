@@ -53,7 +53,7 @@ export function Ribbon() {
         ·
       </span>
       <span className="text-text-secondary">
-        COST <span className="font-semibold text-text-primary">$0.03</span> / PR
+        COST <span className="font-semibold text-text-primary">$0.05 – $0.15</span> / PR
       </span>
       <span aria-hidden="true" className="text-text-muted">
         ·
