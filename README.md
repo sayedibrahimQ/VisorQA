@@ -5,7 +5,6 @@
 [![Meta Global AI Developer Hackathon](https://img.shields.io/badge/Meta%20AI%20Hackathon-100%25%20Meta%20Foundation%20Models-blue?style=for-the-badge&logo=meta)](https://meta.ai)
 [![E2B Sandbox](https://img.shields.io/badge/Sandbox-E2B%20Cloud%20Micro--VMs-orange?style=for-the-badge)](https://e2b.dev)
 [![FSM Architecture](https://img.shields.io/badge/Architecture-Deterministic%205--Node%20FSM-emerald?style=for-the-badge)]()
-[![License: MIT](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)]()
 
 VisorQA is an enterprise-grade, closed-loop autonomous QA agent that detects pixel-level UI regressions invisible to conventional DOM-based test suites (Playwright assertions, Cypress snapshots, Percy visual diffing), mathematically diagnoses their root cause, and autonomously commits verified CSS/React fixes directly to the originating pull request -- with zero human intervention.
 
