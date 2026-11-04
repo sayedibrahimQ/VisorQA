@@ -38,12 +38,11 @@ Evaluators do not need to register, connect personal GitHub OAuth tokens, or pro
 
 #### Execution Steps
 
-```mermaid
-flowchart LR
-    Step1["1. Open /demo\n(Zero Login)"] --> Step2["2. Check Clean Slate\n(0 Open PRs on GitHub)"]
-    Step2 --> Step3["3. Click 'Push Buggy Branch'\n(Triggers Live PR)"]
-    Step3 --> Step4["4. Real 5-Node FSM\n(Live Execution)"]
-    Step4 --> Step5["5. Inspect Healed PR\n(Signed Commit & Telemetry)"]
+```text
+┌───────────────────────┐      ┌────────────────────────┐      ┌────────────────────────┐      ┌────────────────────────┐      ┌────────────────────────┐
+│   1. Open /demo       │      │   2. Verify Baseline   │      │   3. Trigger Defect    │      │   4. Real-Time FSM     │      │   5. Inspect Healed PR │
+│   (Zero Login / Auth) │ ───► │   (0 Open PRs on GH)   │ ───► │   (Push Buggy Branch)  │ ───► │   (01 Sense ──► Verify)│ ───► │   (Signed Bot Commit)  │
+└───────────────────────┘      └────────────────────────┘      └────────────────────────┘      └────────────────────────┘      └────────────────────────┘
 ```
 
 1. **Access Mission Control in Guest Demo Mode:**
@@ -285,6 +284,12 @@ A pull request run is declared `RESOLVED` if and only if $H \ge 0.98$ on both th
 
 ### 1. End-to-End System Architecture Blueprint
 
+<p align="center">
+  <img src="Docs/visorqa_architecture.drawio.png" alt="VisorQA End-to-End System Architecture" width="100%">
+</p>
+
+> **Architectural Specification:** Comprehensive 5-tier architecture connecting Presentation (Next.js 15 & GitHub App), FastAPI Ingestion & WebSocket Broker, 5-Node Deterministic FSM Engine, 100% Meta AI Foundation Model Suite (SAM 3.1, Muse Spark, Muse Wonder, Muse Code), E2B Micro-VM Sandboxes, and PostgreSQL 16. Editable XML source available in [`Docs/VisorQA_System_Architecture.drawio`](Docs/VisorQA_System_Architecture.drawio) (see [`Docs/DIAGRAMS_GUIDE.md`](Docs/DIAGRAMS_GUIDE.md)).
+
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                             VISORQA SYSTEM ARCHITECTURE                                                │
@@ -345,6 +350,12 @@ A pull request run is declared `RESOLVED` if and only if $H \ge 0.98$ on both th
 ---
 
 ### 2. Five-Node FSM Lifecycle & 3-Strike Self-Healing Loop
+
+<p align="center">
+  <img src="Docs/5_Node.drawio.png" alt="VisorQA Five-Node FSM Lifecycle & 3-Strike Self-Healing Loop" width="100%">
+</p>
+
+> **FSM State Machine Specification:** Complete five-stage deterministic lifecycle (Sense ➔ Triage ➔ Diagnose ➔ Patch ➔ Verify) with 3-strike self-healing feedback loop. Re-triggers Node 03 (DIAGNOSE) on failure; auto-commits signed resolution to PR branch upon achieving composite health $H \ge 0.98$ on both mobile ($375\text{px}$) and desktop ($1440\text{px}$) viewports. Editable XML source available in [`Docs/VisorQA_Master_Diagrams.drawio`](Docs/VisorQA_Master_Diagrams.drawio) (see [`Docs/DIAGRAMS_GUIDE.md`](Docs/DIAGRAMS_GUIDE.md)).
 
 ```text
  ┌──────────────┐
@@ -849,6 +860,7 @@ Comprehensive architectural blueprints and specification documents are included 
 
 | Document | Description |
 | :--- | :--- |
+| [Draw.io Technical Architecture Diagrams Specification](Docs/DIAGRAMS_GUIDE.md) | Visual architecture guide, 5-tier system breakdown, UML Use Case diagrams, and PostgreSQL Crow's Foot ERD |
 | [Architecture Decision Records & Blueprint](Docs/VisorQA%20Architecture%20Decision%20Records%20%26%20Engineering%20Blueprint.pdf) | ADRs, design rationale, and engineering trade-offs |
 | [Software Requirements Specification (SRS)](Docs/VisorQA%20Software%20Requirements%20Specification%20(SRS).pdf) | Functional requirements, system invariants, and use cases |
 | [Technical Design Specification (TDS)](Docs/VisorQA%20Technical%20Design%20Specification.pdf) | Complete component specs, sequence flows, and contracts |

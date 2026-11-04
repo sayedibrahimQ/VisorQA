@@ -75,6 +75,9 @@ class GitHubAppAuth:
 
         if private_key is not None:
             self._private_key_inline = _clean_pem(str(private_key))
+        elif private_key_path is not None:
+            # Explicit path provided: do not allow ambient environment inline key to override it
+            self._private_key_inline = ""
         else:
             raw_key = (
                 os.getenv("GITHUB_APP_PRIVATE_KEY")
