@@ -4,7 +4,7 @@ VisorQA Backend Configuration & Mathematical Constants
 
 from typing import Any, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 
 class Settings(BaseSettings):
@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # Core AI & Service Credentials
     META_API_KEY: str = Field(default="", description="Meta Model API key for SAM & Muse models")
+    MODEL_API_KEY: str = Field(default="", description="Hackathon rubric alias for META_API_KEY")
     META_BASE_URL: str = Field(
         default="https://api.meta.ai/v1",
         description="Meta Model API base URL (AsyncOpenAI base_url)",
@@ -80,6 +81,12 @@ class Settings(BaseSettings):
         if v is None or v == "":
             return None
         return str(v).strip()
+
+    @model_validator(mode="after")
+    def _sync_model_api_key(self) -> "Settings":
+        if not self.META_API_KEY and self.MODEL_API_KEY:
+            self.META_API_KEY = self.MODEL_API_KEY
+        return self
     MODAL_TOKEN: str = Field(default="", description="Legacy single Modal token (deprecated; prefer ID/SECRET)")
     MODAL_TOKEN_ID: str = Field(default="", description="Modal API token ID (modal.com -> API Tokens)")
     MODAL_TOKEN_SECRET: str = Field(default="", description="Modal API token secret")
