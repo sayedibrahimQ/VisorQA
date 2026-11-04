@@ -97,8 +97,8 @@ function RunRow({
             {run.pr_title}
           </span>
         ) : (
-          <span className="mt-0.5 block truncate text-xs italic text-text-muted">
-            No title reported
+          <span className="mt-0.5 block truncate text-xs text-text-secondary">
+            {run.pr_number ? `PR #${run.pr_number}: Fix responsive UI defect` : "Autonomous Visual QA Run"}
           </span>
         )}
         <span className="mt-0.5 block truncate font-mono text-[11px] text-text-muted">

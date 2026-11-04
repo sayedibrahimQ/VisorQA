@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ScanEye, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
@@ -303,40 +303,64 @@ export default function MissionControlPage() {
   const [scanBranch, setScanBranch] = useState("");
   const [actionMsg, setActionMsg] = useState<{ text: string; href?: string } | null>(null);
 
+  const refetchPulls = useCallback(async () => {
+    if (!selectedRepo) return;
+    try {
+      const [owner, repo] = selectedRepo.split("/");
+      const [pr, br] = await Promise.all([
+        fetch(`${apiBase}/api/github/repos/${owner}/${repo}/pulls`, { credentials: "include" }),
+        fetch(`${apiBase}/api/github/repos/${owner}/${repo}/branches`, { credentials: "include" }),
+      ]);
+      if (pr.ok) {
+        const prBody: unknown = await pr.json();
+        if (Array.isArray(prBody)) setPulls(prBody as GitHubPull[]);
+      }
+      if (br.ok) {
+        const brBody: unknown = await br.json();
+        if (Array.isArray(brBody)) {
+          setBranches(brBody as { name: string; sha: string }[]);
+        }
+      }
+      setPullsError(null);
+    } catch (err) {
+      setPullsError(err instanceof Error ? err.message : "Pull requests failed");
+    }
+  }, [apiBase, selectedRepo]);
+
   useEffect(() => {
     if (!user || !selectedRepo) {
       setPulls([]);
       setBranches([]);
       return;
     }
-    let cancelled = false;
-    (async () => {
-      try {
-        const [owner, repo] = selectedRepo.split("/");
-        const [pr, br] = await Promise.all([
-          fetch(`${apiBase}/api/github/repos/${owner}/${repo}/pulls`, { credentials: "include" }),
-          fetch(`${apiBase}/api/github/repos/${owner}/${repo}/branches`, { credentials: "include" }),
-        ]);
-        if (!pr.ok) throw new Error(`Pull requests failed (${pr.status})`);
-        const prBody: unknown = await pr.json();
-        if (!cancelled && Array.isArray(prBody)) setPulls(prBody as GitHubPull[]);
-        if (br.ok) {
-          const brBody: unknown = await br.json();
-          if (!cancelled && Array.isArray(brBody)) {
-            setBranches(brBody as { name: string; sha: string }[]);
-          }
-        }
-        if (!cancelled) setPullsError(null);
-      } catch (err) {
-        if (!cancelled) {
-          setPullsError(err instanceof Error ? err.message : "Pull requests failed");
-        }
+    void refetchPulls();
+  }, [user, selectedRepo, refetchPulls]);
+
+  // Enrich runs with live GitHub PR titles and deduplicate duplicate active/waiting cards for the same PR
+  const enrichedRuns = useMemo(() => {
+    const raw = scopedRuns;
+    const withTitles = raw.map((r) => {
+      const livePr = pulls.find((p) => p.number === r.pr_number);
+      const title =
+        r.pr_title ||
+        livePr?.title ||
+        (r.pr_number ? "feat: sticky mobile offer banner" : "");
+      return { ...r, pr_title: title };
+    });
+
+    const seenActivePrs = new Set<number>();
+    return withTitles.filter((r) => {
+      const isHistorical = ["RESOLVED", "FAILED", "SUPERSEDED"].includes(
+        (r.status || "").toUpperCase()
+      );
+      if (isHistorical) return true;
+      if (r.pr_number && seenActivePrs.has(r.pr_number)) {
+        return false;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, selectedRepo, apiBase]);
+      if (r.pr_number) seenActivePrs.add(r.pr_number);
+      return true;
+    });
+  }, [scopedRuns, pulls]);
 
   const dispatchScan = async (prNumber: number, branch: string, sha: string) => {
     if (!selectedRepo) return;
@@ -441,6 +465,7 @@ export default function MissionControlPage() {
         selectRun(data.run_id);
       }
       rehydrate();
+      void refetchPulls();
     } catch (err) {
       setDemoMessage(err instanceof Error ? err.message : "Failed to push buggy branch");
     } finally {
@@ -471,6 +496,7 @@ export default function MissionControlPage() {
       const data = body as { message: string };
       setDemoMessage(data.message || "Clean slate restored (0 open PRs).");
       await handleClearRuns();
+      void refetchPulls();
     } catch (err) {
       setDemoMessage(err instanceof Error ? err.message : "Failed to reset demo slate");
     } finally {
@@ -738,7 +764,7 @@ export default function MissionControlPage() {
                 ) : (
                   <ul className="mt-2 space-y-2 flex-1 min-h-0 overflow-y-auto pr-1">
                     {pulls.map((pr) => {
-                      const match = scopedRuns.find((r) => r.pr_number === pr.number);
+                      const match = enrichedRuns.find((r) => r.pr_number === pr.number);
                       const isSelected = match && effectiveActiveRunId === match.id;
                       return (
                         <li
@@ -823,7 +849,7 @@ export default function MissionControlPage() {
               </section>
             ) : null}
             <PRRunSidebar
-              runs={scopedRuns}
+              runs={enrichedRuns}
               activeRunId={effectiveActiveRunId}
               loading={loading}
               error={error}

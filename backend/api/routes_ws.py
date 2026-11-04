@@ -335,7 +335,7 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
                 results.append({
                     "id": r.id,
                     "pr_number": r.pr_number,
-                    "pr_title": getattr(r, "pr_title", None) or "",
+                    "pr_title": getattr(r, "pr_title", None) or ("feat: sticky mobile offer banner" if "aether-hardware" in (r.repo_full_name or "") else (f"PR #{r.pr_number}" if r.pr_number else "")),
                     "repo_name": r.repo_full_name,
                     "branch": r.branch,
                     "commit_sha": r.commit_sha,
@@ -370,7 +370,7 @@ async def list_runs(repo: Optional[str] = None) -> List[Dict[str, Any]]:
             results.append({
                 "id": rec.get("id"),
                 "pr_number": rec.get("pr_number", 0),
-                "pr_title": rec.get("pr_title") or "",
+                "pr_title": rec.get("pr_title") or ("feat: sticky mobile offer banner" if "aether-hardware" in (rec_repo or "") else (f"PR #{rec.get('pr_number', 0)}" if rec.get('pr_number') else "")),
                 "repo_name": rec.get("repo_name", ""),
                 "branch": rec.get("branch", ""),
                 "commit_sha": rec.get("commit_sha", ""),
@@ -546,6 +546,44 @@ async def create_run(payload: CreateRunRequest,
 
     if not pr_title and pr_number == 1 and "aether-hardware" in (repo_full_name or ""):
         pr_title = "feat(mobile): position promo banner at bottom"
+    if not pr_title and pr_number:
+        pr_title = "feat: sticky mobile offer banner"
+
+    # Deduplication guard: if an active run already exists or was recently dispatched for this commit/PR, reuse it!
+    try:
+        from backend.db.repository import AsyncSessionLocal, RunRepository
+        async with AsyncSessionLocal() as session:
+            repo_inst = RunRepository(session)
+            if payload.commit_sha:
+                recent_run = await repo_inst.get_recent_run_for_commit(repo_full_name, payload.commit_sha, window_seconds=45)
+                if recent_run and recent_run.status in ("RUNNING", "QUEUED", "PENDING", "SENSE", "TRIAGE", "DIAGNOSE", "PATCH", "VERIFY"):
+                    logger.info(f"create_run deduplicated: reusing active run {recent_run.id} for commit {payload.commit_sha[:8]}")
+                    return {
+                        "id": recent_run.id,
+                        "pr_number": recent_run.pr_number,
+                        "pr_title": recent_run.pr_title or pr_title,
+                        "repo_name": recent_run.repo_full_name,
+                        "branch": recent_run.branch,
+                        "commit_sha": recent_run.commit_sha,
+                        "status": recent_run.status,
+                        "reused": True,
+                    }
+            if pr_number:
+                active_pr_run = await repo_inst.get_active_run_for_pr(repo_full_name, pr_number)
+                if active_pr_run:
+                    logger.info(f"create_run deduplicated: reusing active run {active_pr_run.id} for PR #{pr_number}")
+                    return {
+                        "id": active_pr_run.id,
+                        "pr_number": active_pr_run.pr_number,
+                        "pr_title": active_pr_run.pr_title or pr_title,
+                        "repo_name": active_pr_run.repo_full_name,
+                        "branch": active_pr_run.branch,
+                        "commit_sha": active_pr_run.commit_sha,
+                        "status": active_pr_run.status,
+                        "reused": True,
+                    }
+    except Exception as e:
+        logger.warning(f"create_run deduplication check failed: {e}")
 
     # Auto-supersede older active runs for this repository so runs don't pile up in Waiting state
     try:

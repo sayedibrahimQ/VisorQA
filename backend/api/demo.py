@@ -171,17 +171,31 @@ async def push_buggy_branch_and_open_pr(
                 detail=f"GitHub PR creation failed ({st_create}): {detail}"
             )
 
-    # 4. Dispatch the autonomous run in VisorQA
-    from backend.api.routes_ws import create_run, CreateRunRequest
-    run_req = CreateRunRequest(
-        repo_full_name=repo,
-        pr_number=pr_number or 0,
-        branch=branch,
-        commit_sha=BUGGY_COMMIT_SHA,
-        dispatch=True,
-    )
-    run_res = await create_run(run_req, background_tasks, request)
-    run_id = run_res.get("id") if isinstance(run_res, dict) else None
+    # 4. Check if an active run already exists or was started by the webhook for this PR
+    run_id: Optional[str] = None
+    try:
+        from backend.db.repository import AsyncSessionLocal, RunRepository
+        async with AsyncSessionLocal() as session:
+            repo_db = RunRepository(session)
+            active_run = await repo_db.get_active_run_for_pr(repo, pr_number or 0)
+            if active_run:
+                run_id = active_run.id
+                logger.info(f"Demo push: found existing active run {run_id} for PR #{pr_number}")
+    except Exception as exc:
+        logger.warning(f"Demo active run probe failed: {exc}")
+
+    # Only dispatch if no run is already active
+    if not run_id:
+        from backend.api.routes_ws import create_run, CreateRunRequest
+        run_req = CreateRunRequest(
+            repo_full_name=repo,
+            pr_number=pr_number or 0,
+            branch=branch,
+            commit_sha=BUGGY_COMMIT_SHA,
+            dispatch=True,
+        )
+        run_res = await create_run(run_req, background_tasks, request)
+        run_id = run_res.get("id") if isinstance(run_res, dict) else None
 
     return {
         "ok": True,

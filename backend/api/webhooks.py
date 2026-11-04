@@ -390,14 +390,29 @@ async def handle_github_webhook(
                          "delivery_id": delivery_id},
             )
 
-    # 5. Initialize & Persist in PostgreSQL (with delivery_id idempotency)
+    # Resolve PR title if still empty
+    if pr_number and not pr_title:
+        try:
+            from backend.api.auth import resolve_github_token, github_api
+            resolved = await resolve_github_token(None)
+            tok = resolved[0] if resolved else ""
+            if tok:
+                st_pr, pr_body = await github_api("GET", f"/repos/{repo_full_name}/pulls/{pr_number}", tok)
+                if st_pr == 200 and isinstance(pr_body, dict):
+                    pr_title = str(pr_body.get("title") or "")
+        except Exception as t_exc:
+            logger.warning(f"Could not fetch PR title: {t_exc}")
+    if not pr_title and "aether-hardware" in repo_full_name:
+        pr_title = "feat: sticky mobile offer banner"
+
+    # 5. Initialize & Persist in PostgreSQL (with delivery_id and active-run deduplication)
     t_db_start = time.perf_counter()
     run_id: Optional[str] = None
     try:
         async with AsyncSessionLocal() as session:
             repo = RunRepository(session)
 
-            # Idempotency check: repeated deliveries must not create duplicate runs
+            # Idempotency check 1: repeated deliveries must not create duplicate runs
             existing_run = await repo.get_run_by_delivery_id(delivery_id)
             if existing_run:
                 return JSONResponse(
@@ -406,6 +421,34 @@ async def handle_github_webhook(
                         "status": "duplicate",
                         "message": f"Webhook delivery '{delivery_id}' was already processed",
                         "run_id": existing_run.id,
+                        "delivery_id": delivery_id,
+                    },
+                )
+
+            # Idempotency check 2: if a run was already created recently for this exact commit, reuse it
+            recent_commit_run = await repo.get_recent_run_for_commit(repo_full_name, commit_sha, window_seconds=45)
+            if recent_commit_run:
+                logger.info(f"Deduplicating webhook {x_github_event}:{action}: run {recent_commit_run.id} already active for commit {commit_sha[:8]}")
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={
+                        "status": "duplicate",
+                        "message": f"Run {recent_commit_run.id} already dispatched for commit {commit_sha[:8]}",
+                        "run_id": recent_commit_run.id,
+                        "delivery_id": delivery_id,
+                    },
+                )
+
+            # Idempotency check 3: if an active run is already executing for this PR, don't spawn duplicate
+            active_pr_run = await repo.get_active_run_for_pr(repo_full_name, pr_number)
+            if active_pr_run:
+                logger.info(f"Deduplicating webhook {x_github_event}:{action}: active run {active_pr_run.id} in progress for PR #{pr_number}")
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={
+                        "status": "duplicate",
+                        "message": f"Active run {active_pr_run.id} in progress for PR #{pr_number}",
+                        "run_id": active_pr_run.id,
                         "delivery_id": delivery_id,
                     },
                 )
@@ -430,6 +473,7 @@ async def handle_github_webhook(
                 branch=branch,
                 commit_sha=commit_sha,
                 github_delivery_id=delivery_id,
+                pr_title=pr_title,
             )
             run.status = "RUNNING"
             session.add(run)

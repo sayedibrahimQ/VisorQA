@@ -3,7 +3,7 @@ VisorQA Persistence Layer — Production Repository Pattern
 Combines SQLModel Asyncio speed with PostgreSQL 16 EER CHECK constraints & GIN/Covering Indexes.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -293,6 +293,44 @@ class RunRepository:
             select(PRRun)
             .where(PRRun.github_delivery_id == delivery_id)
             .options(selectinload(PRRun.anomalies), selectinload(PRRun.attempts))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def get_active_run_for_pr(
+        self, repo_full_name: str, pr_number: int
+    ) -> Optional[PRRun]:
+        """Returns the currently active run for this PR, if one exists."""
+        if not self.session or not pr_number:
+            return None
+        active_statuses = ["RUNNING", "QUEUED", "PENDING", "WAITING", "SENSE", "TRIAGE", "DIAGNOSE", "PATCH", "VERIFY"]
+        stmt = (
+            select(PRRun)
+            .where(
+                (PRRun.repo_full_name == repo_full_name)
+                & (PRRun.pr_number == pr_number)
+                & (PRRun.status.in_(active_statuses))
+            )
+            .order_by(PRRun.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def get_recent_run_for_commit(
+        self, repo_full_name: str, commit_sha: str, window_seconds: int = 60
+    ) -> Optional[PRRun]:
+        """Returns a run created recently for the same commit to prevent duplicate webhook dispatches."""
+        if not self.session or not commit_sha or commit_sha == "HEAD":
+            return None
+        cutoff = utc_now() - timedelta(seconds=window_seconds)
+        stmt = (
+            select(PRRun)
+            .where(
+                (PRRun.repo_full_name == repo_full_name)
+                & (PRRun.commit_sha == commit_sha)
+                & (PRRun.created_at >= cutoff)
+            )
+            .order_by(PRRun.created_at.desc())
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()
