@@ -23,6 +23,7 @@ from backend.api.routes_ws import (
 from backend.api.auth import router as auth_router
 from backend.api.settings import router as settings_router
 from backend.api.github_repos import router as github_router, runs_router as github_runs_router
+from backend.api.demo import router as demo_router
 from backend.db.repository import init_db
 
 
@@ -72,6 +73,7 @@ app.include_router(auth_router)
 app.include_router(settings_router)
 app.include_router(github_router)
 app.include_router(github_runs_router)
+app.include_router(demo_router)
 
 
 @app.get("/github/callback", include_in_schema=False)
