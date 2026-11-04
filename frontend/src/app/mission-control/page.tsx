@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ScanEye } from "lucide-react";
+import { ScanEye, CheckCircle2, ExternalLink, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   resolveApiBase,
@@ -384,6 +384,81 @@ export default function MissionControlPage() {
     }
   };
 
+  // --- Judge Demo Journey Handlers ---
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [demoMessage, setDemoMessage] = useState<string | null>(null);
+
+  const handlePushBuggyBranch = async () => {
+    setDemoBusy(true);
+    setDemoMessage("Pushing buggy branch & opening GitHub PR…");
+    try {
+      const res = await fetch(`${apiBase}/api/demo/push-buggy-branch`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repo: selectedRepo || "sayedibrahimQ/aether-hardware",
+        }),
+      });
+      const body: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const detail =
+          body && typeof body === "object" && "detail" in body
+            ? String((body as Record<string, unknown>).detail)
+            : `Failed to push buggy branch (${res.status})`;
+        throw new Error(detail);
+      }
+      const data = body as {
+        ok: boolean;
+        pr_number: number;
+        html_url: string;
+        run_id: string;
+        message: string;
+      };
+      setDemoMessage(
+        `PR #${data.pr_number} open on GitHub! Agent run started (${data.run_id?.slice(0, 8)}…).`
+      );
+      if (data.run_id) {
+        selectRun(data.run_id);
+      }
+      rehydrate();
+    } catch (err) {
+      setDemoMessage(err instanceof Error ? err.message : "Failed to push buggy branch");
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
+  const handleResetDemoSlate = async () => {
+    setDemoBusy(true);
+    setDemoMessage("Resetting demo repository to clean slate (0 PRs)…");
+    try {
+      const res = await fetch(`${apiBase}/api/demo/reset-slate`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repo: selectedRepo || "sayedibrahimQ/aether-hardware",
+        }),
+      });
+      const body: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const detail =
+          body && typeof body === "object" && "detail" in body
+            ? String((body as Record<string, unknown>).detail)
+            : `Failed to reset demo slate (${res.status})`;
+        throw new Error(detail);
+      }
+      const data = body as { message: string };
+      setDemoMessage(data.message || "Clean slate restored (0 open PRs).");
+      await handleClearRuns();
+    } catch (err) {
+      setDemoMessage(err instanceof Error ? err.message : "Failed to reset demo slate");
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <main className="min-h-screen bg-canvas text-text-primary">
@@ -497,6 +572,82 @@ export default function MissionControlPage() {
                 Sign Out
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* --- JUDGE GUIDED DEMO JOURNEY BAR --- */}
+        <div
+          data-testid="judge-demo-bar"
+          className="shrink-0 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-laser-cyan/40 bg-surface-subtle p-3 shadow-sm transition-all"
+        >
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 rounded-full bg-laser-cyan animate-pulse" />
+              <span className="font-mono text-xs font-semibold uppercase tracking-wider text-laser-cyan">
+                Judge Demo Journey
+              </span>
+            </div>
+
+            {/* Step 1: Verify GitHub Repo (0 PRs) */}
+            <a
+              href={`https://github.com/${selectedRepo || "sayedibrahimQ/aether-hardware"}/pulls`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 font-mono text-[11px] text-text-secondary hover:text-text-primary transition-colors border border-border-subtle rounded px-2.5 py-1 bg-surface"
+              title="Verify repo has 0 open PRs on GitHub"
+            >
+              <span>1. Check GitHub Repo (0 PRs)</span>
+              <ExternalLink className="h-3 w-3" />
+            </a>
+
+            <button
+              type="button"
+              onClick={handleResetDemoSlate}
+              disabled={demoBusy}
+              className="font-mono text-[10px] text-text-muted hover:text-text-secondary underline"
+              title="Close open PRs on GitHub to guarantee a clean slate"
+            >
+              {demoBusy ? "Resetting…" : "Reset Slate (0 PRs)"}
+            </button>
+
+            {demoMessage ? (
+              <span className="font-mono text-[11px] text-laser-cyan/90 truncate max-w-md">
+                {demoMessage}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Step 2: Push Buggy Branch & Trigger Pipeline */}
+            <button
+              type="button"
+              data-testid="push-buggy-branch-btn"
+              onClick={handlePushBuggyBranch}
+              disabled={demoBusy}
+              className="inline-flex items-center gap-1.5 rounded-md bg-laser-cyan px-3.5 py-1.5 font-mono text-xs font-bold text-black transition-all hover:bg-laser-cyan/90 hover:shadow-[0_0_15px_rgba(0,229,255,0.4)] disabled:opacity-60"
+            >
+              {demoBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              <span>2. Push Buggy Branch &amp; Open PR</span>
+            </button>
+
+            {/* Step 4: When resolved, show prominent Inspect Healed PR button */}
+            {scopedActiveRun?.status === "RESOLVED" && scopedActiveRun.pr_number ? (
+              <a
+                data-testid="inspect-healed-pr-btn"
+                href={`https://github.com/${selectedRepo || "sayedibrahimQ/aether-hardware"}/pull/${scopedActiveRun.pr_number}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-verified-emerald bg-verified-emerald/20 px-3.5 py-1.5 font-mono text-xs font-bold text-verified-emerald hover:bg-verified-emerald/30 transition-all shadow-[0_0_12px_rgba(0,245,155,0.3)] animate-pulse"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>✓ 4. Inspect Healed PR #{scopedActiveRun.pr_number} on GitHub</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            ) : null}
           </div>
         </div>
 
@@ -690,6 +841,19 @@ export default function MissionControlPage() {
                   >
                     Commit &amp; Push Fix to PR Branch
                   </button>
+                  {scopedActiveRun.status === "RESOLVED" && scopedActiveRun.pr_number ? (
+                    <a
+                      data-testid="action-inspect-healed-pr"
+                      href={`https://github.com/${selectedRepo || "sayedibrahimQ/aether-hardware"}/pull/${scopedActiveRun.pr_number}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-sm border border-verified-emerald/80 bg-verified-emerald/20 px-2.5 py-1 font-mono text-[11px] font-semibold text-verified-emerald hover:bg-verified-emerald/30 transition-all shadow-sm"
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      <span>Inspect Healed PR #{scopedActiveRun.pr_number} on GitHub</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : null}
                   {actionMsg ? (
                     <span data-testid="action-result" className="font-mono text-[11px] text-text-secondary">
                       {actionMsg.text}{" "}
