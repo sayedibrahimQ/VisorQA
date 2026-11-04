@@ -1,0 +1,261 @@
+<mxfile host="app.diagrams.net" scale="1" border="0">
+  <diagram name="2. Use Case Diagrams" id="visorqa_usecase_page">
+    <mxGraphModel dx="2200" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title_banner_uc" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#F8FAFC;align=center;shadow=1;" value="&lt;b&gt;&lt;font color=&quot;#38bdf8&quot; style=&quot;font-size: 18px;&quot;&gt;🛡️ VisorQA — UML Use Case Model &amp; System Boundary&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size: 12px;&quot;&gt;Autonomous Optical Testing, Component Triage, Self-Healing Feedback Circuit &amp; Governance (UML 2.5 Standard)&lt;/font&gt;" vertex="1">
+          <mxGeometry x="40" y="20" width="2100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sys_boundary" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#0A0F1D;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#38BDF8;startSize=40;rounded=1;arcSize=6;shadow=1;collapsible=0;" value="&lt;b&gt;&lt;font color=&quot;#38bdf8&quot; style=&quot;font-size: 14px;&quot;&gt;VisorQA Autonomous Optical QA &amp; Self-Healing Platform (System Boundary)&lt;/font&gt;&lt;/b&gt;" vertex="1">
+          <mxGeometry x="300" y="100" width="1580" height="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_dev" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#1E293B;strokeColor=#38BDF8;fontColor=#F8FAFC;fontStyle=1;fontSize=11;" value="&lt;b&gt;Frontend Developer&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot;&gt;(PR Author)&lt;/font&gt;" vertex="1">
+          <mxGeometry x="80" y="200" width="60" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_qa" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#1E293B;strokeColor=#818CF8;fontColor=#F8FAFC;fontStyle=1;fontSize=11;" value="&lt;b&gt;QA Lead / Reviewer&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot;&gt;(Tech Lead / Architect)&lt;/font&gt;" vertex="1">
+          <mxGeometry x="80" y="530" width="60" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_admin" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#1E293B;strokeColor=#F59E0B;fontColor=#F8FAFC;fontStyle=1;fontSize=11;" value="&lt;b&gt;DevOps / Admin&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot;&gt;(Platform Owner)&lt;/font&gt;" vertex="1">
+          <mxGeometry x="80" y="860" width="60" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_gh" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#1E293B;strokeColor=#38BDF8;fontColor=#F8FAFC;fontStyle=1;fontSize=11;" value="&lt;b&gt;GitHub Platform&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot;&gt;(Webhooks &amp; Git API)&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1980" y="200" width="60" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_meta" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#1E293B;strokeColor=#C084FC;fontColor=#F8FAFC;fontStyle=1;fontSize=11;" value="&lt;b&gt;Meta AI Models API&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot;&gt;(SAM 3.1 &amp; Muse Suite)&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1980" y="530" width="60" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_sandbox" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#1E293B;strokeColor=#34D399;fontColor=#F8FAFC;fontStyle=1;fontSize=11;" value="&lt;b&gt;E2B Cloud / Modal&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot;&gt;(Isolated Micro-VM)&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1980" y="860" width="60" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_ingest" parent="sys_boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#111827;strokeColor=#1F2937;fontColor=#94A3B8;fontSize=10;align=left;spacingLeft=10;" value="&lt;b&gt;PACKAGE 1: PR INGESTION &amp; EVENT VALIDATION&lt;/b&gt;" vertex="1">
+          <mxGeometry x="20" y="50" width="1540" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_01" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC01: Open / Sync Pull Request&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Push code changes to branch&lt;/font&gt;" vertex="1">
+          <mxGeometry x="50" y="85" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_02" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC02: Receive Webhook Event&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;POST /api/webhooks/github&lt;/font&gt;" vertex="1">
+          <mxGeometry x="390" y="85" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_03" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#64748B;strokeWidth=1;strokePattern=dashed;fontColor=#CBD5E1;fontSize=11;" value="&lt;b&gt;UC03: Validate HMAC-SHA256&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Verify X-Hub-Signature-256&lt;/font&gt;" vertex="1">
+          <mxGeometry x="730" y="85" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_04" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#64748B;strokeWidth=1;strokePattern=dashed;fontColor=#CBD5E1;fontSize=11;" value="&lt;b&gt;UC04: Spawn Async FSM Session&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Init AgentState (attempt=0, max=3)&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1070" y="85" width="270" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_sense" parent="sys_boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#111827;strokeColor=#1F2937;fontColor=#94A3B8;fontSize=10;align=left;spacingLeft=10;" value="&lt;b&gt;PACKAGE 2: DUAL-VIEWPORT OPTICAL SENSE &amp; MATHEMATICAL EVALUATION&lt;/b&gt;" vertex="1">
+          <mxGeometry x="20" y="220" width="1540" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_05" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC05: Execute Optical Sense&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Node 01: Capture &amp; Segment&lt;/font&gt;" vertex="1">
+          <mxGeometry x="50" y="260" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_06" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#64748B;strokeWidth=1;strokePattern=dashed;fontColor=#CBD5E1;fontSize=11;" value="&lt;b&gt;UC06: Dual Headless Playwright&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Mobile 375px &amp; Desktop 1440px&lt;/font&gt;" vertex="1">
+          <mxGeometry x="390" y="260" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_07" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#C084FC;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC07: Segment with Meta SAM 3.1&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Centroid prompt → Binary M_SAM&lt;/font&gt;" vertex="1">
+          <mxGeometry x="730" y="260" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_08" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#64748B;strokeWidth=1;strokePattern=dashed;fontColor=#CBD5E1;fontSize=11;" value="&lt;b&gt;UC08: Compute Vision Math &amp; H&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Vr &lt; 0.85, IoU &gt; 0.05, Bleed &gt; 2px&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1070" y="260" width="270" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_triage" parent="sys_boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#111827;strokeColor=#1F2937;fontColor=#94A3B8;fontSize=10;align=left;spacingLeft=10;" value="&lt;b&gt;PACKAGE 3: COMPONENT TRIAGE &amp; OPTICAL DIAGNOSIS&lt;/b&gt;" vertex="1">
+          <mxGeometry x="20" y="410" width="1540" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_09" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC09: Triage Source Components&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Node 02: LCA DOM Pruning&lt;/font&gt;" vertex="1">
+          <mxGeometry x="50" y="450" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_10" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC10: Prune with Meta Muse Spark&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Shield src/components/ui/*&lt;/font&gt;" vertex="1">
+          <mxGeometry x="390" y="450" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_11" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#C084FC;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC11: Diagnose Optical Defect&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Node 03: Multimodal Reasoning&lt;/font&gt;" vertex="1">
+          <mxGeometry x="730" y="450" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_12" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#C084FC;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC12: Formulate RepairSpec JSON&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Meta Muse Wonder (Zero Code)&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1070" y="450" width="270" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_patch" parent="sys_boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#111827;strokeColor=#1F2937;fontColor=#94A3B8;fontSize=10;align=left;spacingLeft=10;" value="&lt;b&gt;PACKAGE 4: SURGICAL PATCH SYNTHESIS, HMR &amp; 3-STRIKE CIRCUIT&lt;/b&gt;" vertex="1">
+          <mxGeometry x="20" y="600" width="1540" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_13" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#A855F7;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC13: Synthesize Surgical Diff&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Node 04: Meta Muse Code&lt;/font&gt;" vertex="1">
+          <mxGeometry x="50" y="645" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_14" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#64748B;strokeWidth=1;strokePattern=dashed;fontColor=#CBD5E1;fontSize=11;" value="&lt;b&gt;UC14: Enforce Anti-Hack CSS&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;No !important, No z-9999&lt;/font&gt;" vertex="1">
+          <mxGeometry x="390" y="645" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_15" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#34D399;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC15: Verify in E2B Sandbox&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Node 05: Apply HMR &amp; Re-Sense&lt;/font&gt;" vertex="1">
+          <mxGeometry x="730" y="645" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_16" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC16: 3-Strike Feedback Loop&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Retry Diagnosis if H &lt; 0.98&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1070" y="645" width="270" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_gov" parent="sys_boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#111827;strokeColor=#1F2937;fontColor=#94A3B8;fontSize=10;align=left;spacingLeft=10;" value="&lt;b&gt;PACKAGE 5: RESOLUTION GOVERNANCE, AUDIT &amp; OBSERVABILITY&lt;/b&gt;" vertex="1">
+          <mxGeometry x="20" y="800" width="1540" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_17" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#064E3B;strokeColor=#34D399;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC17: Auto-Commit Verified Fix&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#34d399&quot; style=&quot;font-size:10px;&quot;&gt;Triggered on Health H &gt;= 0.98&lt;/font&gt;" vertex="1">
+          <mxGeometry x="50" y="845" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_18" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#7F1D1D;strokeColor=#F87171;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC18: Post Non-Destructive Review&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#f87171&quot; style=&quot;font-size:10px;&quot;&gt;Triggered on Strike 3 Exhaustion&lt;/font&gt;" vertex="1">
+          <mxGeometry x="390" y="845" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_19" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#818CF8;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC19: Monitor Mission Control UI&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Live WS Stepper &amp; Mask Sliders&lt;/font&gt;" vertex="1">
+          <mxGeometry x="730" y="845" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_20" parent="sys_boundary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E293B;strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F8FAFC;fontSize=11;" value="&lt;b&gt;UC20: Configure Watched Repo&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#94a3b8&quot; style=&quot;font-size:10px;&quot;&gt;Protected globs &amp; $0.15 budget cap&lt;/font&gt;" vertex="1">
+          <mxGeometry x="1070" y="845" width="270" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dev_uc01" parent="1" style="strokeColor=#38BDF8;strokeWidth=1.5;" value="" edge="1" source="actor_dev" target="uc_01">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_gh_uc02" parent="1" style="strokeColor=#38BDF8;strokeWidth=1.5;fontColor=#38BDF8;fontSize=10;" value="Webhook" edge="1" source="actor_gh" target="uc_02">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc01_uc02" parent="1" style="strokeColor=#38BDF8;strokeWidth=1.5;" value="" edge="1" source="uc_01" target="uc_02">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc02_inc_03" parent="1" style="strokeColor=#64748B;strokeWidth=1.5;strokePattern=dashed;fontColor=#94A3B8;fontSize=10;" value="«include»" edge="1" source="uc_02" target="uc_03">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc03_inc_04" parent="1" style="strokeColor=#64748B;strokeWidth=1.5;strokePattern=dashed;fontColor=#94A3B8;fontSize=10;" value="«include»" edge="1" source="uc_03" target="uc_04">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc04_uc05" parent="1" style="strokeColor=#818CF8;strokeWidth=1.5;fontColor=#818CF8;fontSize=10;" value="Spawns FSM" edge="1" source="uc_04" target="uc_05">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1200" y="210" />
+              <mxPoint x="180" y="210" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_uc05_inc_06" parent="1" style="strokeColor=#64748B;strokeWidth=1.5;strokePattern=dashed;fontColor=#94A3B8;fontSize=10;" value="«include»" edge="1" source="uc_05" target="uc_06">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc06_sb" parent="1" style="strokeColor=#34D399;strokeWidth=1.5;fontColor=#34D399;fontSize=10;" value="Playwright" edge="1" source="uc_06" target="actor_sandbox">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="520" y="340" />
+              <mxPoint x="1980" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_uc06_inc_07" parent="1" style="strokeColor=#64748B;strokeWidth=1.5;strokePattern=dashed;fontColor=#94A3B8;fontSize=10;" value="«include»" edge="1" source="uc_06" target="uc_07">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc07_meta" parent="1" style="strokeColor=#C084FC;strokeWidth=1.5;fontColor=#C084FC;fontSize=10;" value="SAM 3.1" edge="1" source="uc_07" target="actor_meta">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc07_inc_08" parent="1" style="strokeColor=#64748B;strokeWidth=1.5;strokePattern=dashed;fontColor=#94A3B8;fontSize=10;" value="«include»" edge="1" source="uc_07" target="uc_08">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc05_uc09" parent="1" style="strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F59E0B;fontSize=10;" value="On Defect" edge="1" source="uc_05" target="uc_09">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc09_inc_10" parent="1" style="strokeColor=#64748B;strokeWidth=1.5;strokePattern=dashed;fontColor=#94A3B8;fontSize=10;" value="«include»" edge="1" source="uc_09" target="uc_10">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc10_meta" parent="1" style="strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F59E0B;fontSize=10;" value="Muse Spark" edge="1" source="uc_10" target="actor_meta">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="520" y="530" />
+              <mxPoint x="1980" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_uc10_uc11" parent="1" style="strokeColor=#C084FC;strokeWidth=1.5;" value="" edge="1" source="uc_10" target="uc_11">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc11_inc_12" parent="1" style="strokeColor=#64748B;strokeWidth=1.5;strokePattern=dashed;fontColor=#94A3B8;fontSize=10;" value="«include»" edge="1" source="uc_11" target="uc_12">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc12_meta" parent="1" style="strokeColor=#C084FC;strokeWidth=1.5;fontColor=#C084FC;fontSize=10;" value="Muse Wonder" edge="1" source="uc_12" target="actor_meta">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc11_uc13" parent="1" style="strokeColor=#A855F7;strokeWidth=1.5;fontColor=#A855F7;fontSize=10;" value="Spec" edge="1" source="uc_11" target="uc_13">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="860" y="590" />
+              <mxPoint x="180" y="590" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_uc13_inc_14" parent="1" style="strokeColor=#64748B;strokeWidth=1.5;strokePattern=dashed;fontColor=#94A3B8;fontSize=10;" value="«include»" edge="1" source="uc_13" target="uc_14">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc13_meta" parent="1" style="strokeColor=#A855F7;strokeWidth=1.5;fontColor=#A855F7;fontSize=10;" value="Muse Code" edge="1" source="uc_13" target="actor_meta">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="180" y="720" />
+              <mxPoint x="1980" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_uc14_uc15" parent="1" style="strokeColor=#34D399;strokeWidth=1.5;fontColor=#34D399;fontSize=10;" value="Diff" edge="1" source="uc_14" target="uc_15">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc15_sb" parent="1" style="strokeColor=#34D399;strokeWidth=1.5;fontColor=#34D399;fontSize=10;" value="HMR Reload" edge="1" source="uc_15" target="actor_sandbox">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc15_ext_16" parent="1" style="strokeColor=#F59E0B;strokeWidth=1.5;strokePattern=dashed;fontColor=#F59E0B;fontSize=10;" value="«extend» [H &lt; 0.98]" edge="1" source="uc_16" target="uc_15">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e_uc16_retry_11" parent="1" style="strokeColor=#F59E0B;strokeWidth=1.5;fontColor=#F59E0B;fontSize=10;" value="Retry" edge="1" source="uc_16" target="uc_11">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1200" y="590" />
+              <mxPoint x="860" y="590" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_uc15_ext_17" parent="1" style="strokeColor=#34D399;strokeWidth=1.5;strokePattern=dashed;fontColor=#34D399;fontSize=10;" value="«extend» [H &gt;= 0.98]" edge="1" source="uc_17" target="uc_15">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="180" y="790" />
+              <mxPoint x="860" y="790" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_uc17_gh" parent="1" style="strokeColor=#34D399;strokeWidth=1.5;fontColor=#34D399;fontSize=10;" value="Auto-Commit" edge="1" source="uc_17" target="actor_gh">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="180" y="1020" />
+              <mxPoint x="2000" y="1020" />
+              <mxPoint x="2000" y="310" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_uc16_ext_18" parent="1" style="strokeColor=#F87171;strokeWidth=1.5;strokePattern=dashed;fontColor=#F87171;fontSize=10;" value="«extend» [Strike 3]" edge="1" source="uc_18" target="uc_16">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="520" y="790" />
+              <mxPoint x="1200" y="790" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_uc18_gh" parent="1" style="strokeColor=#F87171;strokeWidth=1.5;fontColor=#F87171;fontSize=10;" value="Review Comment" edge="1" source="uc_18" target="actor_gh">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="520" y="1000" />
+              <mxPoint x="1980" y="1000" />
+              <mxPoint x="1980" y="310" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_qa_uc19" parent="1" style="strokeColor=#818CF8;strokeWidth=1.5;" value="" edge="1" source="actor_qa" target="uc_19">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="140" y="580" />
+              <mxPoint x="730" y="880" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_admin_uc20" parent="1" style="strokeColor=#F59E0B;strokeWidth=1.5;" value="" edge="1" source="actor_admin" target="uc_20">
+          <mxGeometry x="0" y="0" width="0" height="0" as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="140" y="910" />
+              <mxPoint x="1070" y="880" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
